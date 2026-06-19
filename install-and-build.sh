@@ -46,8 +46,7 @@ install_project() {
     # Check if node_modules exists
     if [ ! -d "node_modules" ]; then
         echo -e "${YELLOW}Installing dependencies...${NC}"
-        npm install
-        if [ $? -ne 0 ]; then
+        if ! npm install; then
             write_error "Failed to install dependencies for $name"
             return 1
         fi
@@ -66,8 +65,7 @@ build_project() {
     echo -e "${YELLOW}Building $name...${NC}"
     
     cd "$path"
-    npm run build
-    if [ $? -ne 0 ]; then
+    if ! npm run build; then
         write_error "Failed to build $name"
         return 1
     fi
@@ -142,18 +140,43 @@ echo ""
 PROJECTS=()
 if [ "$PROJECT" = "all" ]; then
     PROJECTS=("lm-studio" "obsidian")
-else
+elif [ "$PROJECT" = "lm-studio" ] || [ "$PROJECT" = "obsidian" ]; then
     PROJECTS=("$PROJECT")
+else
+    write_error "Unknown project: $PROJECT (expected: all, lm-studio, obsidian)"
+    exit 1
 fi
 
-# Install and build phase
+# Install phase
 for proj in "${PROJECTS[@]}"; do
     if [ "$proj" = "lm-studio" ]; then
         install_project "LM Studio" "$LM_STUDIO_PATH" || exit 1
-        build_project "LM Studio" "$LM_STUDIO_PATH" || exit 1
     elif [ "$proj" = "obsidian" ]; then
         install_project "Obsidian Plugin" "$OBSIDIAN_PATH" || exit 1
-        build_project "Obsidian Plugin" "$OBSIDIAN_PATH" || exit 1
+    else
+        write_error "Unknown project: $proj (expected: lm-studio, obsidian)"
+        exit 1
+    fi
+done
+
+# Build phase (parallel)
+BUILD_PIDS=()
+for proj in "${PROJECTS[@]}"; do
+    if [ "$proj" = "lm-studio" ]; then
+        build_project "LM Studio" "$LM_STUDIO_PATH" &
+        BUILD_PIDS+=("$!")
+    elif [ "$proj" = "obsidian" ]; then
+        build_project "Obsidian Plugin" "$OBSIDIAN_PATH" &
+        BUILD_PIDS+=("$!")
+    else
+        write_error "Unknown project: $proj (expected: lm-studio, obsidian)"
+        exit 1
+    fi
+done
+
+for pid in "${BUILD_PIDS[@]}"; do
+    if ! wait "$pid"; then
+        exit 1
     fi
 done
 
@@ -162,11 +185,22 @@ write_header "✓ All builds completed successfully!"
 # Development phase
 if [ "$WATCH" = true ]; then
     echo -e "${YELLOW}Entering watch mode. Press Ctrl+C to exit.${NC}\n"
+    WATCH_PIDS=()
     for proj in "${PROJECTS[@]}"; do
         if [ "$proj" = "lm-studio" ]; then
-            watch_project "LM Studio" "$LM_STUDIO_PATH"
+            watch_project "LM Studio" "$LM_STUDIO_PATH" &
+            WATCH_PIDS+=("$!")
         elif [ "$proj" = "obsidian" ]; then
-            watch_project "Obsidian Plugin" "$OBSIDIAN_PATH"
+            watch_project "Obsidian Plugin" "$OBSIDIAN_PATH" &
+            WATCH_PIDS+=("$!")
+        else
+            write_error "Unknown project: $proj (expected: lm-studio, obsidian)"
+            exit 1
+        fi
+    done
+    for pid in "${WATCH_PIDS[@]}"; do
+        if ! wait "$pid"; then
+            exit 1
         fi
     done
 elif [ "$START" = true ] && [[ " ${PROJECTS[@]} " =~ " lm-studio " ]]; then

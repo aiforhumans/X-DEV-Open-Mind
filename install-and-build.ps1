@@ -2,7 +2,6 @@
 # Handles both X-DEV-LM-Studio and X-DEV-Obsidian
 
 param(
-    [switch]$dev = $false,
     [switch]$watch = $false,
     [switch]$start = $false,
     [string]$project = "all"
@@ -25,7 +24,7 @@ function Write-Success {
     Write-Host "✓ $message" -ForegroundColor Green
 }
 
-function Write-Error {
+function Write-Failure {
     param([string]$message)
     Write-Host "✗ $message" -ForegroundColor Red
 }
@@ -36,7 +35,7 @@ function Install-Project {
     Write-Header "Installing $name"
     
     if (-not (Test-Path $path)) {
-        Write-Error "$name directory not found at $path"
+        Write-Failure "$name directory not found at $path"
         return $false
     }
     
@@ -47,7 +46,7 @@ function Install-Project {
             Write-Host "Installing dependencies..." -ForegroundColor Yellow
             npm install
             if ($LASTEXITCODE -ne 0) {
-                Write-Error "Failed to install dependencies for $name"
+                Write-Failure "Failed to install dependencies for $name"
                 return $false
             }
         } else {
@@ -71,7 +70,7 @@ function Build-Project {
     try {
         npm run build
         if ($LASTEXITCODE -ne 0) {
-            Write-Error "Failed to build $name"
+            Write-Failure "Failed to build $name"
             return $false
         }
         Write-Success "$name built successfully"
@@ -122,6 +121,26 @@ function Start-LMStudio {
     }
 }
 
+function Invoke-RootScript {
+    param(
+        [string]$scriptName,
+        [string]$description
+    )
+    Write-Host $description -ForegroundColor Yellow
+    Push-Location $projectRoot
+    try {
+        npm run $scriptName
+        if ($LASTEXITCODE -ne 0) {
+            Write-Failure "Failed to run npm script: $scriptName"
+            return $false
+        }
+        return $true
+    }
+    finally {
+        Pop-Location
+    }
+}
+
 # Main execution
 Write-Host @"
 ╔═══════════════════════════════════════════════════════════╗
@@ -134,20 +153,40 @@ Write-Host @"
 $projects = @()
 if ($project -eq "all") {
     $projects = @("lm-studio", "obsidian")
-} else {
+}
+elseif ($project -in @("lm-studio", "obsidian")) {
     $projects = @($project)
+} else {
+    Write-Failure "Unknown project: $project (expected: all, lm-studio, obsidian)"
+    exit 1
 }
 
 # Install and build phase
 foreach ($proj in $projects) {
     if ($proj -eq "lm-studio") {
         if (-not (Install-Project "LM Studio" $lmStudioPath)) { exit 1 }
-        if (-not (Build-Project "LM Studio" $lmStudioPath)) { exit 1 }
     }
     elseif ($proj -eq "obsidian") {
         if (-not (Install-Project "Obsidian Plugin" $obsidianPath)) { exit 1 }
-        if (-not (Build-Project "Obsidian Plugin" $obsidianPath)) { exit 1 }
     }
+    else {
+        Write-Failure "Unknown project: $proj (expected: lm-studio, obsidian)"
+        exit 1
+    }
+}
+
+if ($projects.Count -eq 2) {
+    if (-not (Invoke-RootScript "build:all" "Building all projects in parallel...")) { exit 1 }
+}
+elseif ($projects[0] -eq "lm-studio") {
+    if (-not (Invoke-RootScript "build:lm" "Building LM Studio...")) { exit 1 }
+}
+elseif ($projects[0] -eq "obsidian") {
+    if (-not (Invoke-RootScript "build:obsidian" "Building Obsidian Plugin...")) { exit 1 }
+}
+else {
+    Write-Failure "Unknown project selection"
+    exit 1
 }
 
 Write-Header "✓ All builds completed successfully!"
@@ -155,9 +194,18 @@ Write-Header "✓ All builds completed successfully!"
 # Development phase
 if ($watch) {
     Write-Host "Entering watch mode. Press Ctrl+C to exit.`n" -ForegroundColor Yellow
-    foreach ($proj in $projects) {
-        if ($proj -eq "lm-studio") { Watch-Project "LM Studio" $lmStudioPath }
-        elseif ($proj -eq "obsidian") { Watch-Project "Obsidian Plugin" $obsidianPath }
+    if ($projects.Count -eq 2) {
+        if (-not (Invoke-RootScript "dev:all" "Starting all project watchers...")) { exit 1 }
+    }
+    elseif ($projects[0] -eq "lm-studio") {
+        if (-not (Invoke-RootScript "dev:lm" "Starting LM Studio watcher...")) { exit 1 }
+    }
+    elseif ($projects[0] -eq "obsidian") {
+        if (-not (Invoke-RootScript "dev:obsidian" "Starting Obsidian watcher...")) { exit 1 }
+    }
+    else {
+        Write-Failure "Unknown project selection"
+        exit 1
     }
 }
 elseif ($start -and $projects -contains "lm-studio") {
