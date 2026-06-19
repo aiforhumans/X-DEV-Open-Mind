@@ -87,7 +87,7 @@ X-DEV-Open-Mind/
 ├── install-and-build.ps1   # PowerShell auto-builder
 ├── install-and-build.sh    # Bash auto-builder
 ├── package.json            # Root workspace config
-└── README.md               # This file
+└── README.md               # Main repository guide
 ```
 
 ## Features
@@ -176,7 +176,7 @@ npm run build:obsidian  # Check Obsidian
 
 ## Requirements
 
-- **Node.js** 18+
+- **Node.js** 20+
 - **npm** 8+
 - **Git** (for version control)
 
