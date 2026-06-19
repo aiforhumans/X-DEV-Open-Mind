@@ -1,1 +1,5 @@
 /VAULT/
+node_modules/
+**/node_modules/
+X-DEV-LM-Studio/dist/
+X-DEV-Obsidian/main.js
