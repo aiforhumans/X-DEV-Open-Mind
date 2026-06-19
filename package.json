@@ -1,0 +1,23 @@
+{
+  "name": "x-dev-open-mind",
+  "version": "1.0.0",
+  "description": "X-DEV Open Mind - LM Studio Server & Obsidian Plugin Suite",
+  "workspaces": [
+    "X-DEV-LM-Studio",
+    "X-DEV-Obsidian"
+  ],
+  "scripts": {
+    "install:all": "npm install && npm -w X-DEV-LM-Studio install && npm -w X-DEV-Obsidian install",
+    "build:all": "npm run build -w X-DEV-LM-Studio && npm run build -w X-DEV-Obsidian",
+    "build:lm": "npm run build -w X-DEV-LM-Studio",
+    "build:obsidian": "npm run build -w X-DEV-Obsidian",
+    "dev:all": "npm run dev -w X-DEV-LM-Studio & npm run dev -w X-DEV-Obsidian",
+    "dev:lm": "npm run dev -w X-DEV-LM-Studio",
+    "dev:obsidian": "npm run dev -w X-DEV-Obsidian",
+    "start": "npm start -w X-DEV-LM-Studio",
+    "clean": "rimraf X-DEV-LM-Studio/dist X-DEV-LM-Studio/node_modules X-DEV-Obsidian/main.js X-DEV-Obsidian/node_modules"
+  },
+  "devDependencies": {
+    "rimraf": "^5.0.0"
+  }
+}
