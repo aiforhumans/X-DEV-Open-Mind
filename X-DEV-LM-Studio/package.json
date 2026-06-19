@@ -1,0 +1,23 @@
+{
+  "name": "x-dev-lm-studio",
+  "version": "1.0.0",
+  "description": "Local LLM server and agent framework using LM Studio SDK",
+  "main": "dist/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["llm", "lm-studio", "local-ai", "typescript"],
+  "author": "X-DEV",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@lmstudio/sdk": "latest"
+  }
+}

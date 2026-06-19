@@ -1,0 +1,11 @@
+{
+  "id": "x-dev-obsidian-llm",
+  "name": "X-DEV Obsidian LLM",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Local LLM integration for Obsidian using LM Studio",
+  "author": "X-DEV",
+  "authorUrl": "",
+  "fundingUrl": "",
+  "isDesktopOnly": false
+}

@@ -1,0 +1,1062 @@
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "http";
+import path from "path";
+import { LMStudioClient, tool, type ChatLike, type ChatMessage, type ChatMessageInput, type FileHandle, type LLMActionOpts, type LLMPredictionOpts, type LLMRespondOpts, type Tool } from "@lmstudio/sdk";
+import { z } from "zod";
+
+export type ModelDomain = "llm" | "embedding";
+
+export interface ModelConfig {
+  name: string;
+  domain?: ModelDomain;
+  path?: string;
+  contextLength?: number;
+  gpuOffload?: number;
+  keepModelInMemory?: boolean;
+  tryMmap?: boolean;
+  loadOptions?: Record<string, unknown>;
+}
+
+export interface InferenceOptions {
+  temperature?: number;
+  topP?: number;
+  topK?: number;
+  maxTokens?: number;
+}
+
+export interface ApiMessageInput {
+  role?: "system" | "user" | "assistant";
+  content?: string;
+  images?: string[];
+}
+
+export interface CompleteRequest {
+  model?: string;
+  prompt: string;
+  options?: LLMPredictionOpts;
+  stream?: boolean;
+}
+
+export interface RespondRequest {
+  model?: string;
+  messages: ApiMessageInput[];
+  options?: LLMRespondOpts;
+  stream?: boolean;
+}
+
+export interface ActRequest {
+  model?: string;
+  messages: ApiMessageInput[];
+  options?: LLMActionOpts;
+  toolNames?: BuiltinToolName[];
+  stream?: boolean;
+}
+
+export interface EmbedRequest {
+  model?: string;
+  input: string | string[];
+}
+
+export interface FileRequest {
+  path?: string;
+  base64?: string;
+  fileName?: string;
+}
+
+export interface RetrieveRequest {
+  query: string;
+  files: FileRequest[];
+}
+
+export interface ParseDocumentRequest {
+  file: FileRequest;
+}
+
+export interface BackendOptions {
+  host?: string;
+  port?: number;
+  apiUrl?: string;
+  clientIdentifier?: string;
+  clientPasskey?: string;
+  verboseErrorMessages?: boolean;
+}
+
+export interface JsonError {
+  error: {
+    message: string;
+    code: string;
+    details?: unknown;
+  };
+}
+
+type SerializableMessage = {
+  role: string;
+  content: string;
+  toolCalls?: unknown[];
+  toolResults?: unknown[];
+  hasFiles?: boolean;
+};
+
+const BUILTIN_TOOL_NAMES = [
+  "list_downloaded_models",
+  "list_loaded_models",
+  "prepare_file",
+  "prepare_image",
+  "parse_document",
+  "retrieve_documents",
+] as const;
+
+export type BuiltinToolName = (typeof BUILTIN_TOOL_NAMES)[number];
+
+class ApiError extends Error {
+  constructor(
+    public readonly statusCode: number,
+    public readonly code: string,
+    message: string,
+    public readonly details?: unknown
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeBaseUrl(apiUrl: string): string {
+  if (apiUrl.startsWith("ws://") || apiUrl.startsWith("wss://")) {
+    return apiUrl;
+  }
+  if (apiUrl.startsWith("http://")) {
+    return `ws://${apiUrl.slice("http://".length)}`;
+  }
+  if (apiUrl.startsWith("https://")) {
+    return `wss://${apiUrl.slice("https://".length)}`;
+  }
+  return `ws://${apiUrl.replace(/^\/+/, "")}`;
+}
+
+function jsonResponse(res: ServerResponse, statusCode: number, body: unknown): void {
+  res.statusCode = statusCode;
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.end(JSON.stringify(body));
+}
+
+function textResponse(res: ServerResponse, statusCode: number, body: string): void {
+  res.statusCode = statusCode;
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.end(body);
+}
+
+async function readJsonBody(req: IncomingMessage, limitBytes = 10 * 1024 * 1024): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.length;
+    if (size > limitBytes) {
+      throw new ApiError(413, "payload_too_large", "Request body is too large.");
+    }
+    chunks.push(buffer);
+  }
+
+  if (chunks.length === 0) {
+    return {};
+  }
+
+  const raw = Buffer.concat(chunks).toString("utf8");
+  if (!raw.trim()) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    throw new ApiError(400, "invalid_json", "Request body must be valid JSON.");
+  }
+}
+
+function getString(value: unknown, field: string): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new ApiError(400, "invalid_request", `Field "${field}" must be a non-empty string.`);
+  }
+  return value;
+}
+
+function getOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function getOptionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function getOptionalNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function toSerializableError(error: unknown): JsonError {
+  if (error instanceof ApiError) {
+    return {
+      error: {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+      },
+    };
+  }
+
+  if (error instanceof Error) {
+    return {
+      error: {
+        message: error.message,
+        code: "internal_error",
+      },
+    };
+  }
+
+  return {
+    error: {
+      message: "Unknown error",
+      code: "internal_error",
+      details: error,
+    },
+  };
+}
+
+async function prepareImages(client: LMStudioClient, imagePaths: unknown): Promise<FileHandle[]> {
+  if (!Array.isArray(imagePaths)) {
+    return [];
+  }
+
+  const paths = imagePaths.map((value) => getString(value, "images"));
+  return Promise.all(paths.map((imagePath) => client.files.prepareImage(path.resolve(imagePath))));
+}
+
+function serializeFileHandle(file: FileHandle, absolutePath?: string): Record<string, unknown> {
+  return {
+    identifier: file.identifier,
+    name: file.name,
+    type: file.type,
+    sizeBytes: file.sizeBytes,
+    isImage: file.isImage(),
+    absolutePath,
+  };
+}
+
+function serializeMessage(message: ChatMessage): SerializableMessage {
+  const role = message.getRole();
+  const content = message.getText();
+  return {
+    role,
+    content,
+    toolCalls: message.getToolCallRequests(),
+    toolResults: message.getToolCallResults(),
+    hasFiles: message.hasFiles(),
+  };
+}
+
+async function normalizeChatMessages(messages: ApiMessageInput[], client: LMStudioClient): Promise<ChatMessageInput[]> {
+  return Promise.all(
+    messages.map(async (message) => {
+      const images = await prepareImages(client, message.images);
+      return {
+        role: message.role ?? "user",
+        content: message.content ?? "",
+        images,
+      };
+    })
+  );
+}
+
+function pickBuiltInTools(toolNames: BuiltinToolName[], backend: LMStudioServer): Tool[] {
+  const tools: Tool[] = [];
+  const emptyParameters = {} as Record<string, { parse(input: any): any }>;
+
+  for (const name of toolNames) {
+    switch (name) {
+      case "list_downloaded_models":
+        tools.push(
+          tool({
+            name,
+            description: "List downloaded LM Studio models.",
+            parameters: emptyParameters,
+            implementation: async () => backend.listModels(),
+          })
+        );
+        break;
+      case "list_loaded_models":
+        tools.push(
+          tool({
+            name,
+            description: "List currently loaded LM Studio models.",
+            parameters: {
+              domain: z.enum(["llm", "embedding"]).optional(),
+            },
+            implementation: async ({ domain }) => backend.listLoadedModels(domain),
+          })
+        );
+        break;
+      case "prepare_file":
+        tools.push(
+          tool({
+            name,
+            description: "Prepare a local file for retrieval or document parsing.",
+            parameters: {
+              path: z.string(),
+            },
+            implementation: async ({ path: filePath }) => backend.prepareFile(filePath),
+          })
+        );
+        break;
+      case "prepare_image":
+        tools.push(
+          tool({
+            name,
+            description: "Prepare a local image for vision models.",
+            parameters: {
+              path: z.string(),
+            },
+            implementation: async ({ path: imagePath }) => backend.prepareImage(imagePath),
+          })
+        );
+        break;
+      case "parse_document":
+        tools.push(
+          tool({
+            name,
+            description: "Parse a document into text and metadata.",
+            parameters: {
+              path: z.string(),
+            },
+            implementation: async ({ path: documentPath }) => backend.parseDocument({ path: documentPath }),
+          })
+        );
+        break;
+      case "retrieve_documents":
+        tools.push(
+          tool({
+            name,
+            description: "Retrieve relevant document passages from local files.",
+            parameters: {
+              query: z.string(),
+              files: z.array(z.string()),
+            },
+            implementation: async ({ query, files }) =>
+              backend.retrieveDocuments({
+                query,
+                files: files.map((filePath) => ({ path: filePath })),
+              }),
+          })
+        );
+        break;
+      default:
+        throw new ApiError(400, "unknown_tool", `Unknown built-in tool "${name}".`);
+    }
+  }
+
+  return tools;
+}
+
+export class LMStudioServer {
+  private readonly client: LMStudioClient;
+  private readonly baseUrl: string;
+  private readonly currentModels: Record<ModelDomain, string | null> = {
+    llm: null,
+    embedding: null,
+  };
+  private server: Server | null = null;
+
+  constructor(apiUrl = "http://localhost:1234", options: BackendOptions = {}) {
+    this.baseUrl = normalizeBaseUrl(options.apiUrl ?? apiUrl);
+    this.client = new LMStudioClient({
+      baseUrl: this.baseUrl,
+      clientIdentifier: options.clientIdentifier,
+      clientPasskey: options.clientPasskey,
+      verboseErrorMessages: options.verboseErrorMessages,
+    });
+  }
+
+  async loadModel(config: ModelConfig): Promise<void> {
+    await this.loadModelByDomain(config.domain ?? "llm", config);
+  }
+
+  async unloadModel(identifier?: string, domain: ModelDomain = "llm"): Promise<void> {
+    if (identifier) {
+      await this.getNamespace(domain).unload(identifier);
+      if (this.currentModels[domain] === identifier) {
+        this.currentModels[domain] = null;
+      }
+      return;
+    }
+
+    const loaded = await this.getNamespace(domain).listLoaded();
+    if (loaded.length === 0) {
+      this.currentModels[domain] = null;
+      return;
+    }
+
+    await this.getNamespace(domain).unload(loaded[0].identifier);
+    this.currentModels[domain] = null;
+  }
+
+  async infer(prompt: string, options?: InferenceOptions): Promise<string> {
+    const model = await this.client.llm.model();
+    const prediction = model.complete(prompt, this.mapPredictionOptions(options));
+    const result = await prediction.result();
+    return result.content;
+  }
+
+  async listModels(domain?: ModelDomain): Promise<unknown[]> {
+    if (domain === "llm") {
+      return this.client.system.listDownloadedModels("llm");
+    }
+    if (domain === "embedding") {
+      return this.client.system.listDownloadedModels("embedding");
+    }
+    return this.client.system.listDownloadedModels();
+  }
+
+  async listLoadedModels(domain: ModelDomain = "llm"): Promise<unknown[]> {
+    return this.getNamespace(domain).listLoaded();
+  }
+
+  getCurrentModel(): string | null {
+    return this.currentModels.llm;
+  }
+
+  async prepareFile(filePath: string): Promise<Record<string, unknown>> {
+    const file = await this.client.files.prepareFile(path.resolve(filePath));
+    return serializeFileHandle(file, await file.getFilePath());
+  }
+
+  async prepareImage(imagePath: string): Promise<Record<string, unknown>> {
+    const file = await this.client.files.prepareImage(path.resolve(imagePath));
+    return serializeFileHandle(file, await file.getFilePath());
+  }
+
+  async parseDocument(file: FileRequest): Promise<Record<string, unknown>> {
+    const handle = await this.prepareDocumentHandle(file);
+    const result = await this.client.files.parseDocument(handle);
+    return result as unknown as Record<string, unknown>;
+  }
+
+  async retrieveDocuments(request: RetrieveRequest): Promise<Record<string, unknown>> {
+    const handles = await Promise.all(request.files.map((file) => this.prepareDocumentHandle(file)));
+    const result = await this.client.files.retrieve(request.query, handles);
+    return result as unknown as Record<string, unknown>;
+  }
+
+  async start(port = 3000, host = "127.0.0.1"): Promise<Server> {
+    if (this.server) {
+      return this.server;
+    }
+
+    this.server = createServer((req, res) => {
+      void this.handleRequest(req, res);
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      const onError = (error: Error): void => {
+        this.server?.off("error", onError);
+        reject(error);
+      };
+
+      this.server?.once("error", onError);
+      this.server?.listen(port, host, () => {
+        this.server?.off("error", onError);
+        resolve();
+      });
+    });
+
+    return this.server;
+  }
+
+  async stop(): Promise<void> {
+    if (!this.server) {
+      return;
+    }
+
+    const server = this.server;
+    this.server = null;
+
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+  }
+
+  private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    try {
+      if (!req.url || !req.method) {
+        throw new ApiError(400, "invalid_request", "Request URL and method are required.");
+      }
+
+      const url = new URL(req.url, "http://localhost");
+      const method = req.method.toUpperCase();
+      const body = method === "GET" || method === "HEAD" ? {} : await readJsonBody(req);
+
+      if (method === "GET" && (url.pathname === "/health" || url.pathname === "/api/health")) {
+        jsonResponse(res, 200, await this.getHealth());
+        return;
+      }
+
+      if (method === "GET" && (url.pathname === "/v1/models" || url.pathname === "/api/models")) {
+        jsonResponse(res, 200, { data: await this.listModels(this.readDomain(url)) });
+        return;
+      }
+
+      if (method === "GET" && (url.pathname === "/api/models/loaded" || url.pathname === "/v1/models/loaded")) {
+        jsonResponse(res, 200, { data: await this.listLoadedModels(this.readDomain(url) ?? "llm") });
+        return;
+      }
+
+      if (method === "POST" && (url.pathname === "/api/models/load" || url.pathname === "/v1/models/load")) {
+        await this.loadModel(this.readModelConfig(body));
+        jsonResponse(res, 200, { ok: true });
+        return;
+      }
+
+      if (method === "POST" && (url.pathname === "/api/models/unload" || url.pathname === "/v1/models/unload")) {
+        const domain = this.readDomain(url) ?? this.readDomainFromBody(body) ?? "llm";
+        const identifier = getOptionalString(isRecord(body) ? body.identifier : undefined);
+        await this.unloadModel(identifier, domain);
+        jsonResponse(res, 200, { ok: true });
+        return;
+      }
+
+      if (method === "POST" && (url.pathname === "/v1/completions" || url.pathname === "/api/llm/complete")) {
+        const request = this.readCompleteRequest(body);
+        if (request.stream || this.readStreamFlag(url)) {
+          await this.streamComplete(res, request);
+          return;
+        }
+        jsonResponse(res, 200, await this.complete(request));
+        return;
+      }
+
+      if (method === "POST" && (url.pathname === "/v1/chat/completions" || url.pathname === "/api/llm/respond")) {
+        const request = this.readRespondRequest(body);
+        if (request.stream || this.readStreamFlag(url)) {
+          await this.streamRespond(res, request);
+          return;
+        }
+        jsonResponse(res, 200, await this.respond(request));
+        return;
+      }
+
+      if (method === "POST" && (url.pathname === "/api/llm/act" || url.pathname === "/v1/llm/act")) {
+        const request = this.readActRequest(body);
+        if (request.stream || this.readStreamFlag(url)) {
+          await this.streamAct(res, request);
+          return;
+        }
+        jsonResponse(res, 200, await this.act(request));
+        return;
+      }
+
+      if (method === "POST" && (url.pathname === "/v1/embeddings" || url.pathname === "/api/embedding/embed")) {
+        jsonResponse(res, 200, await this.embed(this.readEmbedRequest(body)));
+        return;
+      }
+
+      if (method === "POST" && (url.pathname === "/api/embedding/tokenize" || url.pathname === "/api/embedding/count-tokens")) {
+        jsonResponse(res, 200, await this.embeddingTokens(url.pathname, body));
+        return;
+      }
+
+      if (method === "POST" && (url.pathname === "/api/files/prepare-file" || url.pathname === "/api/files/prepare-image")) {
+        jsonResponse(res, 200, await this.prepareFileEndpoint(url.pathname, body));
+        return;
+      }
+
+      if (method === "POST" && (url.pathname === "/api/files/parse-document" || url.pathname === "/api/files/retrieve")) {
+        jsonResponse(res, 200, await this.documentEndpoint(url.pathname, body));
+        return;
+      }
+
+      if (method === "GET" && url.pathname === "/") {
+        textResponse(res, 200, "LM Studio backend is running.");
+        return;
+      }
+
+      throw new ApiError(404, "not_found", `No route matches ${method} ${url.pathname}.`);
+    } catch (error) {
+      jsonResponse(res, error instanceof ApiError ? error.statusCode : 500, toSerializableError(error));
+    }
+  }
+
+  private async getHealth(): Promise<Record<string, unknown>> {
+    return {
+      ok: true,
+      baseUrl: this.baseUrl,
+    };
+  }
+
+  private readDomain(url: URL): ModelDomain | undefined {
+    const domain = url.searchParams.get("domain");
+    return domain === "llm" || domain === "embedding" ? domain : undefined;
+  }
+
+  private readDomainFromBody(body: unknown): ModelDomain | undefined {
+    if (!isRecord(body)) {
+      return undefined;
+    }
+    const domain = body.domain;
+    return domain === "llm" || domain === "embedding" ? domain : undefined;
+  }
+
+  private readStreamFlag(url: URL): boolean {
+    const value = url.searchParams.get("stream");
+    return value === "1" || value === "true";
+  }
+
+  private readModelConfig(body: unknown): ModelConfig {
+    if (!isRecord(body)) {
+      throw new ApiError(400, "invalid_request", "Model configuration must be an object.");
+    }
+
+    return {
+      name: getString(body.name ?? body.model ?? body.modelKey, "name"),
+      domain: this.readDomainFromBody(body),
+      path: getOptionalString(body.path),
+      contextLength: getOptionalNumber(body.contextLength),
+      gpuOffload: getOptionalNumber(body.gpuOffload),
+      keepModelInMemory: getOptionalBoolean(body.keepModelInMemory),
+      tryMmap: getOptionalBoolean(body.tryMmap),
+      loadOptions: isRecord(body.loadOptions) ? body.loadOptions : undefined,
+    };
+  }
+
+  private readCompleteRequest(body: unknown): CompleteRequest {
+    if (!isRecord(body)) {
+      throw new ApiError(400, "invalid_request", "Completion request must be an object.");
+    }
+
+    return {
+      model: getOptionalString(body.model ?? body.modelKey),
+      prompt: getString(body.prompt, "prompt"),
+      options: isRecord(body.options) ? (body.options as LLMPredictionOpts) : undefined,
+      stream: getOptionalBoolean(body.stream),
+    };
+  }
+
+  private readRespondRequest(body: unknown): RespondRequest {
+    if (!isRecord(body)) {
+      throw new ApiError(400, "invalid_request", "Chat request must be an object.");
+    }
+
+    if (!Array.isArray(body.messages)) {
+      throw new ApiError(400, "invalid_request", "Field \"messages\" must be an array.");
+    }
+
+    return {
+      model: getOptionalString(body.model ?? body.modelKey),
+      messages: body.messages.map((message) => this.readMessageInput(message)),
+      options: isRecord(body.options) ? (body.options as LLMRespondOpts) : undefined,
+      stream: getOptionalBoolean(body.stream),
+    };
+  }
+
+  private readActRequest(body: unknown): ActRequest {
+    if (!isRecord(body)) {
+      throw new ApiError(400, "invalid_request", "Act request must be an object.");
+    }
+
+    if (!Array.isArray(body.messages)) {
+      throw new ApiError(400, "invalid_request", "Field \"messages\" must be an array.");
+    }
+
+    const toolNames = Array.isArray(body.toolNames)
+      ? body.toolNames.filter((toolName): toolName is BuiltinToolName => BUILTIN_TOOL_NAMES.includes(toolName as BuiltinToolName))
+      : undefined;
+
+    if (Array.isArray(body.toolNames) && (!toolNames || toolNames.length !== body.toolNames.length)) {
+      throw new ApiError(400, "invalid_request", "One or more tool names are invalid.");
+    }
+
+    return {
+      model: getOptionalString(body.model ?? body.modelKey),
+      messages: body.messages.map((message) => this.readMessageInput(message)),
+      options: isRecord(body.options) ? (body.options as LLMActionOpts) : undefined,
+      toolNames,
+      stream: getOptionalBoolean(body.stream),
+    };
+  }
+
+  private readEmbedRequest(body: unknown): EmbedRequest {
+    if (!isRecord(body)) {
+      throw new ApiError(400, "invalid_request", "Embedding request must be an object.");
+    }
+
+    const input = body.input;
+    if (typeof input !== "string" && !Array.isArray(input)) {
+      throw new ApiError(400, "invalid_request", "Field \"input\" must be a string or string array.");
+    }
+
+    if (Array.isArray(input) && input.some((value) => typeof value !== "string")) {
+      throw new ApiError(400, "invalid_request", "Field \"input\" must contain only strings.");
+    }
+
+    return {
+      model: getOptionalString(body.model ?? body.modelKey),
+      input: input as string | string[],
+    };
+  }
+
+  private readMessageInput(message: unknown): ApiMessageInput {
+    if (!isRecord(message)) {
+      throw new ApiError(400, "invalid_request", "Each message must be an object.");
+    }
+
+    const role = message.role;
+    if (role !== undefined && role !== "system" && role !== "user" && role !== "assistant") {
+      throw new ApiError(400, "invalid_request", "Message role must be system, user, or assistant.");
+    }
+
+    const images = message.images;
+    if (images !== undefined && !Array.isArray(images)) {
+      throw new ApiError(400, "invalid_request", "Message images must be an array of paths.");
+    }
+
+    return {
+      role,
+      content: getOptionalString(message.content),
+      images: Array.isArray(images) ? images.map((value) => getString(value, "images")) : undefined,
+    };
+  }
+
+  private async loadModelByDomain(domain: ModelDomain, config: ModelConfig): Promise<void> {
+    const modelKey = config.path ?? config.name;
+    const loadOptions = this.buildLoadOptions(domain, config);
+    await this.getNamespace(domain).load(modelKey, loadOptions);
+    this.currentModels[domain] = modelKey;
+  }
+
+  private buildLoadOptions(domain: ModelDomain, config: ModelConfig): Record<string, unknown> {
+    const options: Record<string, unknown> = { ...(config.loadOptions ?? {}) };
+    if (config.contextLength !== undefined) {
+      options.contextLength = config.contextLength;
+    }
+    if (config.keepModelInMemory !== undefined) {
+      options.keepModelInMemory = config.keepModelInMemory;
+    }
+    if (config.tryMmap !== undefined) {
+      options.tryMmap = config.tryMmap;
+    }
+    if (config.gpuOffload !== undefined && domain === "llm") {
+      options.gpu = { ratio: config.gpuOffload };
+    }
+    return options;
+  }
+
+  private getNamespace(domain: ModelDomain) {
+    return domain === "embedding" ? this.client.embedding : this.client.llm;
+  }
+
+  private mapPredictionOptions(options?: InferenceOptions): LLMPredictionOpts | undefined {
+    if (!options) {
+      return undefined;
+    }
+
+    return {
+      temperature: options.temperature,
+      topPSampling: options.topP,
+      topKSampling: options.topK,
+      maxTokens: options.maxTokens,
+    };
+  }
+
+  private async prepareDocumentHandle(file: FileRequest): Promise<FileHandle> {
+    if (typeof file.path === "string" && file.path.trim()) {
+      return this.client.files.prepareFile(path.resolve(file.path));
+    }
+
+    if (typeof file.base64 === "string" && file.base64.trim()) {
+      const fileName = getString(file.fileName, "fileName");
+      return this.client.files.prepareFileBase64(fileName, file.base64);
+    }
+
+    throw new ApiError(400, "invalid_request", "A file requires either a path or base64 content.");
+  }
+
+  private async complete(request: CompleteRequest): Promise<Record<string, unknown>> {
+    const model = await this.resolveLlmModel(request.model);
+    const prediction = model.complete(request.prompt, request.options);
+    const result = await prediction.result();
+    return {
+      model: model.identifier,
+      content: result.content,
+      stats: result.stats,
+    };
+  }
+
+  private async respond(request: RespondRequest): Promise<Record<string, unknown>> {
+    const model = await this.resolveLlmModel(request.model);
+    const messages = await normalizeChatMessages(request.messages, this.client);
+    const prediction = model.respond(messages as ChatLike, request.options);
+    const result = await prediction.result();
+    return {
+      model: model.identifier,
+      content: result.content,
+      stats: result.stats,
+    };
+  }
+
+  private async act(request: ActRequest): Promise<Record<string, unknown>> {
+    const model = await this.resolveLlmModel(request.model);
+    const messages = await normalizeChatMessages(request.messages, this.client);
+    const collectedMessages: SerializableMessage[] = [];
+    const tools = pickBuiltInTools(request.toolNames ?? [], this);
+
+    const result = await model.act(messages as ChatLike, tools, {
+      ...(request.options ?? {}),
+      onMessage: (message) => {
+        collectedMessages.push(serializeMessage(message));
+        request.options?.onMessage?.(message);
+      },
+    });
+
+    return {
+      model: model.identifier,
+      rounds: result.rounds,
+      totalExecutionTimeSeconds: result.totalExecutionTimeSeconds,
+      messages: collectedMessages,
+    };
+  }
+
+  private async embed(request: EmbedRequest): Promise<Record<string, unknown>> {
+    const model = await this.resolveEmbeddingModel(request.model);
+    const result = Array.isArray(request.input) ? await model.embed(request.input) : await model.embed(request.input);
+    return {
+      model: model.identifier,
+      result,
+    };
+  }
+
+  private async embeddingTokens(pathname: string, body: unknown): Promise<Record<string, unknown>> {
+    if (!isRecord(body)) {
+      throw new ApiError(400, "invalid_request", "Embedding request must be an object.");
+    }
+
+    const model = await this.resolveEmbeddingModel(getOptionalString(body.model ?? body.modelKey));
+    const input = getString(body.input, "input");
+    if (pathname.endsWith("tokenize")) {
+      return {
+        model: model.identifier,
+        tokens: await model.tokenize(input),
+      };
+    }
+
+    return {
+      model: model.identifier,
+      tokenCount: await model.countTokens(input),
+    };
+  }
+
+  private async prepareFileEndpoint(pathname: string, body: unknown): Promise<Record<string, unknown>> {
+    if (!isRecord(body)) {
+      throw new ApiError(400, "invalid_request", "File request must be an object.");
+    }
+
+    const request = this.readFileRequest(body);
+    if (pathname.endsWith("prepare-image")) {
+      return this.prepareImageFromRequest(request);
+    }
+    return this.prepareFileFromRequest(request);
+  }
+
+  private async documentEndpoint(pathname: string, body: unknown): Promise<Record<string, unknown>> {
+    if (pathname.endsWith("parse-document")) {
+      return this.parseDocument(this.readParseDocumentRequest(body).file);
+    }
+    return this.retrieveDocuments(this.readRetrieveRequest(body));
+  }
+
+  private readFileRequest(body: unknown): FileRequest {
+    if (!isRecord(body)) {
+      throw new ApiError(400, "invalid_request", "File request must be an object.");
+    }
+
+    return {
+      path: getOptionalString(body.path),
+      base64: getOptionalString(body.base64),
+      fileName: getOptionalString(body.fileName),
+    };
+  }
+
+  private readParseDocumentRequest(body: unknown): ParseDocumentRequest {
+    if (!isRecord(body)) {
+      throw new ApiError(400, "invalid_request", "Parse document request must be an object.");
+    }
+
+    return {
+      file: this.readFileRequest(body.file ?? body),
+    };
+  }
+
+  private readRetrieveRequest(body: unknown): RetrieveRequest {
+    if (!isRecord(body)) {
+      throw new ApiError(400, "invalid_request", "Retrieve request must be an object.");
+    }
+
+    if (!Array.isArray(body.files)) {
+      throw new ApiError(400, "invalid_request", "Field \"files\" must be an array.");
+    }
+
+    return {
+      query: getString(body.query, "query"),
+      files: body.files.map((file) => this.readFileRequest(isRecord(file) ? file : { path: file as string })),
+    };
+  }
+
+  private async prepareFileFromRequest(file: FileRequest): Promise<Record<string, unknown>> {
+    if (file.path) {
+      return this.prepareFile(file.path);
+    }
+    if (file.base64 && file.fileName) {
+      const handle = await this.client.files.prepareFileBase64(file.fileName, file.base64);
+      return serializeFileHandle(handle, await handle.getFilePath());
+    }
+    throw new ApiError(400, "invalid_request", "A file requires either a path or base64 content.");
+  }
+
+  private async prepareImageFromRequest(file: FileRequest): Promise<Record<string, unknown>> {
+    if (file.path) {
+      return this.prepareImage(file.path);
+    }
+    if (file.base64 && file.fileName) {
+      const handle = await this.client.files.prepareImageBase64(file.fileName, file.base64);
+      return serializeFileHandle(handle, await handle.getFilePath());
+    }
+    throw new ApiError(400, "invalid_request", "An image requires either a path or base64 content.");
+  }
+
+  private async resolveLlmModel(modelKey?: string) {
+    if (modelKey) {
+      return this.client.llm.model(modelKey);
+    }
+    return this.client.llm.model();
+  }
+
+  private async resolveEmbeddingModel(modelKey?: string) {
+    if (modelKey) {
+      return this.client.embedding.model(modelKey);
+    }
+    return this.client.embedding.model();
+  }
+
+  private async streamComplete(res: ServerResponse, request: CompleteRequest): Promise<void> {
+    const model = await this.resolveLlmModel(request.model);
+    const prediction = model.complete(request.prompt, request.options);
+
+    this.startStream(res);
+    try {
+      for await (const fragment of prediction) {
+        this.writeStreamEvent(res, "fragment", fragment);
+      }
+      this.writeStreamEvent(res, "result", await prediction.result());
+      this.endStream(res);
+    } catch (error) {
+      this.writeStreamEvent(res, "error", toSerializableError(error));
+      this.endStream(res);
+    }
+  }
+
+  private async streamRespond(res: ServerResponse, request: RespondRequest): Promise<void> {
+    const model = await this.resolveLlmModel(request.model);
+    const messages = await normalizeChatMessages(request.messages, this.client);
+    const prediction = model.respond(messages as ChatLike, request.options);
+
+    this.startStream(res);
+    try {
+      for await (const fragment of prediction) {
+        this.writeStreamEvent(res, "fragment", fragment);
+      }
+      this.writeStreamEvent(res, "result", await prediction.result());
+      this.endStream(res);
+    } catch (error) {
+      this.writeStreamEvent(res, "error", toSerializableError(error));
+      this.endStream(res);
+    }
+  }
+
+  private async streamAct(res: ServerResponse, request: ActRequest): Promise<void> {
+    const model = await this.resolveLlmModel(request.model);
+    const messages = await normalizeChatMessages(request.messages, this.client);
+    const tools = pickBuiltInTools(request.toolNames ?? [], this);
+    const collectedMessages: SerializableMessage[] = [];
+
+    this.startStream(res);
+    try {
+      const result = await model.act(messages as ChatLike, tools, {
+        ...(request.options ?? {}),
+        onMessage: (message) => {
+          const serializable = serializeMessage(message);
+          collectedMessages.push(serializable);
+          this.writeStreamEvent(res, "message", serializable);
+          request.options?.onMessage?.(message);
+        },
+        onRoundStart: (roundIndex) => {
+          this.writeStreamEvent(res, "roundStart", { roundIndex });
+          request.options?.onRoundStart?.(roundIndex);
+        },
+        onRoundEnd: (roundIndex) => {
+          this.writeStreamEvent(res, "roundEnd", { roundIndex });
+          request.options?.onRoundEnd?.(roundIndex);
+        },
+        onPredictionFragment: (fragment) => {
+          this.writeStreamEvent(res, "fragment", fragment);
+          request.options?.onPredictionFragment?.(fragment);
+        },
+      });
+
+      this.writeStreamEvent(res, "result", {
+        model: model.identifier,
+        rounds: result.rounds,
+        totalExecutionTimeSeconds: result.totalExecutionTimeSeconds,
+        messages: collectedMessages,
+      });
+      this.endStream(res);
+    } catch (error) {
+      this.writeStreamEvent(res, "error", toSerializableError(error));
+      this.endStream(res);
+    }
+  }
+
+  private startStream(res: ServerResponse): void {
+    res.statusCode = 200;
+    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders();
+  }
+
+  private writeStreamEvent(res: ServerResponse, event: string, data: unknown): void {
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  }
+
+  private endStream(res: ServerResponse): void {
+    res.end();
+  }
+}
+
+export default LMStudioServer;
+
+if (require.main === module) {
+  const port = Number(process.env.PORT ?? "3000");
+  const host = process.env.HOST ?? "127.0.0.1";
+  const apiUrl = process.env.LM_STUDIO_BASE_URL ?? process.env.LM_STUDIO_URL ?? "http://localhost:1234";
+
+  const server = new LMStudioServer(apiUrl);
+  void server.start(port, host).then(() => {
+    console.log(`LM Studio backend listening on http://${host}:${port}`);
+  });
+}

@@ -1,0 +1,25 @@
+{
+  "name": "x-dev-obsidian",
+  "version": "1.0.0",
+  "description": "Local LLM integration plugin for Obsidian",
+  "main": "main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "lint": "echo \"Add eslint to lint your code\""
+  },
+  "keywords": ["llm", "lm-studio", "obsidian-plugin"],
+  "author": "X-DEV",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.25.0",
+    "obsidian": "latest",
+    "tslib": "2.4.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@lmstudio/sdk": "latest"
+  }
+}
