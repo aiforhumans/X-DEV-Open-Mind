@@ -148,6 +148,307 @@ function textResponse(res: ServerResponse, statusCode: number, body: string): vo
   res.end(body);
 }
 
+function htmlResponse(res: ServerResponse, statusCode: number, body: string): void {
+  res.statusCode = statusCode;
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.end(body);
+}
+
+function getUiHtml(): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LM Studio UI</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b1020;
+        --surface: #101934;
+        --surface-2: #141f3f;
+        --text: #e7ecff;
+        --muted: #9db0e4;
+        --accent: #5a8cff;
+        --ok: #14c38e;
+        --error: #ff6b6b;
+        --border: #2a3a66;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: Inter, Segoe UI, Arial, sans-serif;
+        background: radial-gradient(circle at top, #13214a, var(--bg));
+        color: var(--text);
+        min-height: 100vh;
+      }
+      .wrap {
+        width: min(920px, calc(100% - 24px));
+        margin: 24px auto;
+      }
+      .panel {
+        background: color-mix(in srgb, var(--surface), transparent 10%);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 16px;
+        margin-bottom: 14px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 1.35rem;
+      }
+      .muted {
+        color: var(--muted);
+        margin: 0;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        gap: 10px;
+      }
+      input,
+      select,
+      textarea,
+      button {
+        font: inherit;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: var(--surface-2);
+        color: var(--text);
+      }
+      input,
+      select,
+      textarea {
+        padding: 10px 12px;
+        width: 100%;
+      }
+      textarea {
+        min-height: 140px;
+        resize: vertical;
+      }
+      button {
+        padding: 10px 14px;
+        cursor: pointer;
+      }
+      button.primary {
+        border-color: #3a64d8;
+        background: linear-gradient(180deg, #4f7efb, #3f63d1);
+      }
+      .status {
+        margin-top: 10px;
+        font-size: 0.95rem;
+      }
+      .status.ok {
+        color: var(--ok);
+      }
+      .status.error {
+        color: var(--error);
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .result {
+        white-space: pre-wrap;
+        line-height: 1.5;
+        background: #0d1530;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px;
+        min-height: 80px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <section class="panel">
+        <h1>LM Studio Local UI</h1>
+        <p class="muted">Load a local model and send prompts through this backend.</p>
+        <div id="health" class="status muted">Checking backend health...</div>
+      </section>
+
+      <section class="panel">
+        <h1>Model</h1>
+        <div class="row">
+          <select id="modelSelect"></select>
+          <button id="refreshBtn">Refresh</button>
+          <button id="loadBtn" class="primary">Load selected</button>
+        </div>
+        <div id="modelStatus" class="status muted"></div>
+      </section>
+
+      <section class="panel">
+        <h1>Prompt</h1>
+        <textarea id="promptInput" placeholder="Ask your local model..."></textarea>
+        <div class="actions" style="margin-top: 10px">
+          <button id="sendBtn" class="primary">Send</button>
+          <button id="clearBtn">Clear</button>
+        </div>
+        <div id="result" class="result" style="margin-top: 10px"></div>
+      </section>
+    </main>
+
+    <script>
+      const healthEl = document.getElementById("health");
+      const modelSelect = document.getElementById("modelSelect");
+      const modelStatus = document.getElementById("modelStatus");
+      const resultEl = document.getElementById("result");
+      const promptInput = document.getElementById("promptInput");
+      const refreshBtn = document.getElementById("refreshBtn");
+      const loadBtn = document.getElementById("loadBtn");
+      const sendBtn = document.getElementById("sendBtn");
+      const clearBtn = document.getElementById("clearBtn");
+
+      function setStatus(el, text, type) {
+        el.textContent = text;
+        el.className = "status " + (type || "muted");
+      }
+
+      function pickModelKey(model) {
+        if (typeof model === "string") return model;
+        if (!model || typeof model !== "object") return "";
+        return (
+          model.identifier ||
+          model.modelKey ||
+          model.path ||
+          model.name ||
+          model.id ||
+          ""
+        );
+      }
+
+      function getErrorMessage(payload) {
+        if (payload && payload.error && payload.error.message) {
+          return payload.error.message;
+        }
+        return typeof payload === "string" ? payload : "Request failed.";
+      }
+
+      async function requestJson(url, options) {
+        const response = await fetch(url, options);
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(getErrorMessage(payload));
+        }
+        return payload;
+      }
+
+      async function refreshModels() {
+        setStatus(modelStatus, "Loading model list...", "muted");
+        try {
+          const [downloaded, loaded] = await Promise.all([
+            requestJson("/v1/models?domain=llm"),
+            requestJson("/v1/models/loaded?domain=llm"),
+          ]);
+
+          const models = Array.isArray(downloaded.data) ? downloaded.data : [];
+          const loadedModels = Array.isArray(loaded.data) ? loaded.data : [];
+          const loadedKey = pickModelKey(loadedModels[0]) || "";
+
+          modelSelect.innerHTML = "";
+          for (const model of models) {
+            const key = pickModelKey(model);
+            if (!key) continue;
+            const option = document.createElement("option");
+            option.value = key;
+            option.textContent = key;
+            option.selected = key === loadedKey;
+            modelSelect.append(option);
+          }
+
+          if (!modelSelect.value && loadedKey) {
+            const option = document.createElement("option");
+            option.value = loadedKey;
+            option.textContent = loadedKey;
+            option.selected = true;
+            modelSelect.append(option);
+          }
+
+          if (modelSelect.options.length === 0) {
+            setStatus(modelStatus, "No downloaded models found in LM Studio.", "error");
+            return;
+          }
+
+          if (loadedKey) {
+            setStatus(modelStatus, "Loaded model: " + loadedKey, "ok");
+          } else {
+            setStatus(modelStatus, "No model is currently loaded.", "muted");
+          }
+        } catch (error) {
+          setStatus(modelStatus, error.message, "error");
+        }
+      }
+
+      async function loadSelectedModel() {
+        const model = modelSelect.value;
+        if (!model) {
+          setStatus(modelStatus, "Select a model first.", "error");
+          return;
+        }
+        setStatus(modelStatus, "Loading " + model + "...", "muted");
+        try {
+          await requestJson("/v1/models/load", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: model, domain: "llm" }),
+          });
+          setStatus(modelStatus, "Loaded model: " + model, "ok");
+        } catch (error) {
+          setStatus(modelStatus, error.message, "error");
+        }
+      }
+
+      async function sendPrompt() {
+        const prompt = promptInput.value.trim();
+        if (!prompt) {
+          resultEl.textContent = "Type a prompt first.";
+          return;
+        }
+        resultEl.textContent = "Generating...";
+        sendBtn.disabled = true;
+        try {
+          const payload = await requestJson("/v1/chat/completions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              messages: [{ role: "user", content: prompt }],
+              model: modelSelect.value || undefined,
+            }),
+          });
+          resultEl.textContent = payload.content || JSON.stringify(payload, null, 2);
+        } catch (error) {
+          resultEl.textContent = "Error: " + error.message;
+        } finally {
+          sendBtn.disabled = false;
+        }
+      }
+
+      async function init() {
+        try {
+          const health = await requestJson("/health");
+          setStatus(healthEl, health.ok ? "Backend healthy (" + (health.baseUrl || "") + ")" : "Backend unhealthy", health.ok ? "ok" : "error");
+        } catch (error) {
+          setStatus(healthEl, "Health check failed: " + error.message, "error");
+        }
+        await refreshModels();
+      }
+
+      refreshBtn.addEventListener("click", refreshModels);
+      loadBtn.addEventListener("click", loadSelectedModel);
+      sendBtn.addEventListener("click", sendPrompt);
+      clearBtn.addEventListener("click", () => {
+        promptInput.value = "";
+        resultEl.textContent = "";
+      });
+      void init();
+    </script>
+  </body>
+</html>`;
+}
+
 async function readJsonBody(req: IncomingMessage, limitBytes = 10 * 1024 * 1024): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
@@ -582,7 +883,7 @@ export class LMStudioServer {
       }
 
       if (method === "GET" && url.pathname === "/") {
-        textResponse(res, 200, "LM Studio backend is running.");
+        htmlResponse(res, 200, getUiHtml());
         return;
       }
 

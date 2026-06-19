@@ -23,6 +23,8 @@ npm run build
 npm start
 ```
 
+Then open `http://127.0.0.1:3000` for the built-in UI.
+
 Environment variables:
 
 - `PORT` - HTTP port, default `3000`
@@ -32,6 +34,7 @@ Environment variables:
 ## Endpoints
 
 - `GET /health`
+- `GET /` (Web UI)
 - `GET /v1/models`
 - `GET /v1/models/loaded`
 - `POST /v1/models/load`
