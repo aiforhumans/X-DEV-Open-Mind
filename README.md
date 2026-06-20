@@ -33,7 +33,7 @@ X-DEV-Open-Mind/
 │   ├── FINDINGS.md              # Implementation issues & recommendations
 │   └── BUILD_AND_TEST_REPORT.md # Verification status & build results
 │
-├── start.bat                    # 🚀 MAIN LAUNCHER (starts backend + Obsidian)
+├── start.bat                    # 🚀 MAIN LAUNCHER (runs LM Studio tests)
 ├── setup.bat                    # Install dependencies & build
 ├── stop-all.bat                 # Stop all running processes
 ├── clean-build.bat              # Full clean rebuild
@@ -74,9 +74,9 @@ This installs dependencies and builds everything.
 start.bat
 ```
 
-This launches both the backend server + Obsidian plugin automatically.
+This runs the LM Studio backend test suite automatically.
 
-✨ That's it! The console will stay open showing backend logs.
+✨ That's it! The console will stay open showing test output.
 
 ### For macOS/Linux Users
 

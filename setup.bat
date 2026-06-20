@@ -49,7 +49,7 @@ echo OK - Build complete
 echo.
 echo ============================================================================
 echo SETUP COMPLETE!
-echo Next: Run start.bat to launch the server and Obsidian
+echo Next: Run start.bat to run the LM Studio test suite
 echo ============================================================================
 echo.
 pause

@@ -56,37 +56,26 @@ start.bat
 You should see:
 ```
 ============================================================================
-  X-DEV Open Mind - Launcher
-  Starting Backend Server + Obsidian Plugin
+  X-DEV Open Mind - Test Launcher
+  Running LM Studio backend tests
 ============================================================================
 
-[1/5] Checking Node.js and npm...
+[1/3] Checking Node.js and npm...
 ✓ Node.js v20.x.x found
 ✓ npm 10.x.x found
 
-[2/5] Checking dependencies...
+[2/3] Checking dependencies...
 ✓ Dependencies ready
 
-[3/5] Checking builds...
-✓ Projects built
-
-[4/5] Starting LM Studio backend server...
-✓ Backend server starting on http://localhost:3000
-
-[5/5] Launching Obsidian...
-✓ Obsidian launching...
+[3/3] Running LM Studio test suite...
+✓ LM Studio test suite passed
 
 ============================================================================
-✓ Launcher complete!
+Test run complete
 ============================================================================
 
-Backend Server:
-  URL: http://localhost:3000
-  Logs: Displayed below
-
-Obsidian Plugin:
-  Settings: Plugin settings in Obsidian (Settings > Community Plugins > X-DEV)
-  LM Studio URL: http://localhost:1234
+Test output:
+  Shown directly in the console
 
 To stop: Close this window or press Ctrl+C
 

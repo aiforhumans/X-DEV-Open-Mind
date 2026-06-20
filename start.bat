@@ -1,52 +1,35 @@
 @echo off
 REM ============================================================================
-REM X-DEV Open Mind - Windows Launcher
-REM Starts LM Studio backend + Obsidian plugin in a single command
+REM X-DEV Open Mind - LM Studio Test Launcher
+REM Runs the LM Studio backend test suite in a single command
 REM ============================================================================
 
 setlocal enabledelayedexpansion
 
-REM Colors and formatting
-for /F %%A in ('echo prompt $H ^| cmd') do set "BS=%%A"
-set "RESET=[0m"
-set "GREEN=[32m"
-set "RED=[31m"
-set "YELLOW=[33m"
-set "BLUE=[34m"
-set "CYAN=[36m"
-
-REM Store process IDs for cleanup
-set "BACKEND_PID="
-set "OBSIDIAN_PID="
+set "TEST_EXIT_CODE=0"
 
 echo.
-echo %BLUE%============================================================================%RESET%
-echo %BLUE%  X-DEV Open Mind - Launcher%RESET%
-echo %BLUE%  Starting Backend Server + Obsidian Plugin%RESET%
-echo %BLUE%============================================================================%RESET%
+echo ============================================================================
+echo  X-DEV Open Mind - Test Launcher
+echo  Running LM Studio backend tests
+echo ============================================================================
 echo.
 
 REM ============================================================================
 REM STEP 1: Check for Node.js and npm
 REM ============================================================================
-echo %CYAN%[1/5] Checking Node.js and npm...%RESET%
+echo [1/3] Checking Node.js and npm...
 
 where node >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
-    echo %RED%ERROR: Node.js not found!%RESET%
-    echo.
-    echo Please install Node.js 20+ from https://nodejs.org/
-    echo.
+    echo ERROR: Node.js not found! Install from https://nodejs.org/
     pause
     exit /b 1
 )
 
 where npm >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
-    echo %RED%ERROR: npm not found!%RESET%
-    echo.
-    echo Please install Node.js 20+ from https://nodejs.org/
-    echo.
+    echo ERROR: npm not found! Install from https://nodejs.org/
     pause
     exit /b 1
 )
@@ -54,133 +37,59 @@ if %ERRORLEVEL% NEQ 0 (
 for /f "tokens=*" %%i in ('node --version') do set "NODE_VERSION=%%i"
 for /f "tokens=*" %%i in ('npm --version') do set "NPM_VERSION=%%i"
 
-echo %GREEN%✓ Node.js %NODE_VERSION% found%RESET%
-echo %GREEN%✓ npm %NPM_VERSION% found%RESET%
+echo OK - Node.js !NODE_VERSION! found
+echo OK - npm !NPM_VERSION! found
 echo.
 
 REM ============================================================================
-REM STEP 2: Install dependencies (if needed)
+REM STEP 2: Install dependencies
 REM ============================================================================
-echo %CYAN%[2/5] Checking dependencies...%RESET%
+echo [2/3] Checking dependencies...
 
 if not exist "node_modules" (
-    echo %YELLOW%Installing root dependencies...%RESET%
+    echo Installing root dependencies...
     call npm install
     if %ERRORLEVEL% NEQ 0 (
-        echo %RED%ERROR: Failed to install root dependencies!%RESET%
+        echo ERROR: Failed to install root dependencies!
         pause
         exit /b 1
     )
 )
 
 if not exist "X-DEV-LM-Studio\node_modules" (
-    echo %YELLOW%Installing LM Studio dependencies...%RESET%
+    echo Installing LM Studio dependencies...
     call npm install -w X-DEV-LM-Studio
     if %ERRORLEVEL% NEQ 0 (
-        echo %RED%ERROR: Failed to install LM Studio dependencies!%RESET%
+        echo ERROR: Failed to install LM Studio dependencies!
         pause
         exit /b 1
     )
 )
 
-if not exist "X-DEV-Obsidian\node_modules" (
-    echo %YELLOW%Installing Obsidian plugin dependencies...%RESET%
-    call npm install -w X-DEV-Obsidian
-    if %ERRORLEVEL% NEQ 0 (
-        echo %RED%ERROR: Failed to install Obsidian dependencies!%RESET%
-        pause
-        exit /b 1
-    )
-)
-
-echo %GREEN%✓ Dependencies ready%RESET%
+echo OK - Dependencies ready
 echo.
 
 REM ============================================================================
-REM STEP 3: Build projects (if needed)
+REM STEP 3: Run LM Studio test suite
 REM ============================================================================
-echo %CYAN%[3/5] Checking builds...%RESET%
-
-if not exist "X-DEV-LM-Studio\dist\index.js" (
-    echo %YELLOW%Building LM Studio backend...%RESET%
-    call npm run build:lm
-    if %ERRORLEVEL% NEQ 0 (
-        echo %RED%ERROR: Failed to build LM Studio!%RESET%
-        pause
-        exit /b 1
-    )
-)
-
-if not exist "X-DEV-Obsidian\main.js" (
-    echo %YELLOW%Building Obsidian plugin...%RESET%
-    call npm run build:obsidian
-    if %ERRORLEVEL% NEQ 0 (
-        echo %RED%ERROR: Failed to build Obsidian plugin!%RESET%
-        pause
-        exit /b 1
-    )
-)
-
-echo %GREEN%✓ Projects built%RESET%
+echo [3/3] Running LM Studio test suite...
 echo.
 
-REM ============================================================================
-REM STEP 4: Start Backend Server
-REM ============================================================================
-echo %CYAN%[4/5] Starting LM Studio backend server...%RESET%
+call npm test -w X-DEV-LM-Studio
+set "TEST_EXIT_CODE=%ERRORLEVEL%"
 
-REM Start backend in a separate process and capture PID
-start "X-DEV LM Studio Backend" cmd /c "cd /d %CD% && npm start -w X-DEV-LM-Studio"
-
-REM Give it a moment to start
-timeout /t 2 /nobreak
-
-echo %GREEN%✓ Backend server starting on http://localhost:3000%RESET%
 echo.
-
-REM ============================================================================
-REM STEP 5: Start Obsidian
-REM ============================================================================
-echo %CYAN%[5/5] Launching Obsidian...%RESET%
-
-REM Try to find Obsidian in common locations
-set "OBSIDIAN_PATH="
-
-if exist "%PROGRAMFILES%\Obsidian\Obsidian.exe" (
-    set "OBSIDIAN_PATH=%PROGRAMFILES%\Obsidian\Obsidian.exe"
-) else if exist "%LOCALAPPDATA%\Obsidian\Obsidian.exe" (
-    set "OBSIDIAN_PATH=%LOCALAPPDATA%\Obsidian\Obsidian.exe"
-) else if exist "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Obsidian.lnk" (
-    set "OBSIDIAN_PATH=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Obsidian.lnk"
-)
-
-if "!OBSIDIAN_PATH!" NEQ "" (
-    start "" "!OBSIDIAN_PATH!"
-    echo %GREEN%✓ Obsidian launching...%RESET%
+if %TEST_EXIT_CODE% NEQ 0 (
+    echo ERROR: LM Studio test suite failed!
 ) else (
-    echo %YELLOW%⚠ Obsidian not found in standard locations.%RESET%
-    echo %YELLOW%  Please ensure Obsidian is installed or launch it manually.%RESET%
+    echo OK - LM Studio test suite passed
 )
 
 echo.
-echo %BLUE%============================================================================%RESET%
-echo %GREEN%✓ Launcher complete!%RESET%
-echo %BLUE%============================================================================%RESET%
+echo ============================================================================
+echo Test run complete
+echo ============================================================================
 echo.
-echo %CYAN%Backend Server:%RESET%
-echo   URL: %GREEN%http://localhost:3000%RESET%
-echo   Logs: %CYAN%Displayed below%RESET%
-echo.
-echo %CYAN%Obsidian Plugin:%RESET%
-echo   Settings: Plugin settings in Obsidian (Settings ^> Community Plugins ^> X-DEV)
-echo   LM Studio URL: %YELLOW%http://localhost:1234%RESET%
-echo.
-echo %YELLOW%To stop: Close this window or press Ctrl+C%RESET%
-echo.
-echo %BLUE%============================================================================%RESET%
-echo.
+pause
 
-REM Wait indefinitely to keep window open
-:wait_loop
-timeout /t 1 >nul 2>&1
-goto wait_loop
+exit /b %TEST_EXIT_CODE%

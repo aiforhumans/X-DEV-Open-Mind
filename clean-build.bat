@@ -66,7 +66,7 @@ if %ERRORLEVEL% NEQ 0 (
 
 REM Start the launcher
 echo.
-echo Build successful! Starting X-DEV...
+echo Build successful! Starting LM Studio test suite...
 echo.
 timeout /t 2 >nul
 call start.bat
