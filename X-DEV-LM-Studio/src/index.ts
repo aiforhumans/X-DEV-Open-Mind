@@ -78,6 +78,7 @@ export interface BackendOptions {
   clientIdentifier?: string;
   clientPasskey?: string;
   verboseErrorMessages?: boolean;
+  client?: LMStudioClient;
 }
 
 export interface JsonError {
@@ -107,7 +108,7 @@ const BUILTIN_TOOL_NAMES = [
 
 export type BuiltinToolName = (typeof BUILTIN_TOOL_NAMES)[number];
 
-class ApiError extends Error {
+export class ApiError extends Error {
   constructor(
     public readonly statusCode: number,
     public readonly code: string,
@@ -119,11 +120,11 @@ class ApiError extends Error {
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function normalizeBaseUrl(apiUrl: string): string {
+export function normalizeBaseUrl(apiUrl: string): string {
   if (apiUrl.startsWith("ws://") || apiUrl.startsWith("wss://")) {
     return apiUrl;
   }
@@ -804,7 +805,7 @@ function getUiHtml(): string {
 </html>`;
 }
 
-async function readJsonBody(req: IncomingMessage, limitBytes = 10 * 1024 * 1024): Promise<unknown> {
+export async function readJsonBody(req: IncomingMessage, limitBytes = 10 * 1024 * 1024): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
 
@@ -833,26 +834,26 @@ async function readJsonBody(req: IncomingMessage, limitBytes = 10 * 1024 * 1024)
   }
 }
 
-function getString(value: unknown, field: string): string {
+export function getString(value: unknown, field: string): string {
   if (typeof value !== "string" || !value.trim()) {
     throw new ApiError(400, "invalid_request", `Field "${field}" must be a non-empty string.`);
   }
   return value;
 }
 
-function getOptionalString(value: unknown): string | undefined {
+export function getOptionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
 }
 
-function getOptionalBoolean(value: unknown): boolean | undefined {
+export function getOptionalBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
 }
 
-function getOptionalNumber(value: unknown): number | undefined {
+export function getOptionalNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function toSerializableError(error: unknown): JsonError {
+export function toSerializableError(error: unknown): JsonError {
   if (error instanceof ApiError) {
     return {
       error: {
@@ -881,7 +882,7 @@ function toSerializableError(error: unknown): JsonError {
   };
 }
 
-async function prepareImages(client: LMStudioClient, imagePaths: unknown): Promise<FileHandle[]> {
+export async function prepareImages(client: LMStudioClient, imagePaths: unknown): Promise<FileHandle[]> {
   if (!Array.isArray(imagePaths)) {
     return [];
   }
@@ -890,7 +891,7 @@ async function prepareImages(client: LMStudioClient, imagePaths: unknown): Promi
   return Promise.all(paths.map((imagePath) => client.files.prepareImage(path.resolve(imagePath))));
 }
 
-function serializeFileHandle(file: FileHandle, absolutePath?: string): Record<string, unknown> {
+export function serializeFileHandle(file: FileHandle, absolutePath?: string): Record<string, unknown> {
   return {
     identifier: file.identifier,
     name: file.name,
@@ -901,7 +902,7 @@ function serializeFileHandle(file: FileHandle, absolutePath?: string): Record<st
   };
 }
 
-function serializeMessage(message: ChatMessage): SerializableMessage {
+export function serializeMessage(message: ChatMessage): SerializableMessage {
   const role = message.getRole();
   const content = message.getText();
   return {
@@ -913,7 +914,7 @@ function serializeMessage(message: ChatMessage): SerializableMessage {
   };
 }
 
-async function normalizeChatMessages(messages: ApiMessageInput[], client: LMStudioClient): Promise<ChatMessageInput[]> {
+export async function normalizeChatMessages(messages: ApiMessageInput[], client: LMStudioClient): Promise<ChatMessageInput[]> {
   return Promise.all(
     messages.map(async (message) => {
       const images = await prepareImages(client, message.images);
@@ -926,7 +927,7 @@ async function normalizeChatMessages(messages: ApiMessageInput[], client: LMStud
   );
 }
 
-function pickBuiltInTools(toolNames: BuiltinToolName[], backend: LMStudioServer): Tool[] {
+export function pickBuiltInTools(toolNames: BuiltinToolName[], backend: LMStudioServer): Tool[] {
   const tools: Tool[] = [];
   const emptyParameters = {} as Record<string, { parse(input: any): any }>;
 
@@ -1026,12 +1027,14 @@ export class LMStudioServer {
 
   constructor(apiUrl = "http://localhost:1234", options: BackendOptions = {}) {
     this.baseUrl = normalizeBaseUrl(options.apiUrl ?? apiUrl);
-    this.client = new LMStudioClient({
-      baseUrl: this.baseUrl,
-      clientIdentifier: options.clientIdentifier,
-      clientPasskey: options.clientPasskey,
-      verboseErrorMessages: options.verboseErrorMessages,
-    });
+    this.client =
+      options.client ??
+      new LMStudioClient({
+        baseUrl: this.baseUrl,
+        clientIdentifier: options.clientIdentifier,
+        clientPasskey: options.clientPasskey,
+        verboseErrorMessages: options.verboseErrorMessages,
+      });
   }
 
   async loadModel(config: ModelConfig): Promise<void> {

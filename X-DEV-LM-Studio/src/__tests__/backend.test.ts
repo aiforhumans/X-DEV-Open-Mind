@@ -1,254 +1,703 @@
-/**
- * Backend Request Parser Tests
- * Simple unit tests for validation helpers in index.ts
- *
- * Run with: npx tsx src/__tests__/backend.test.ts
- * Or integrate with Jest/Vitest for automated CI testing
- */
+import path from "node:path";
+import { Readable } from "node:stream";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock the request parser functions from index.ts
-// These would be extracted and exported from index.ts for testability
+import {
+  ApiError,
+  LMStudioServer,
+  getOptionalBoolean,
+  getOptionalNumber,
+  getOptionalString,
+  getString,
+  normalizeBaseUrl,
+  normalizeChatMessages,
+  pickBuiltInTools,
+  readJsonBody,
+  serializeFileHandle,
+  serializeMessage,
+  toSerializableError,
+} from "../index";
 
-interface TestResult {
+type MockMessage = {
+  getRole: () => string;
+  getText: () => string;
+  getToolCallRequests: () => unknown[];
+  getToolCallResults: () => unknown[];
+  hasFiles: () => boolean;
+};
+
+type MockClient = {
+  llm: {
+    model: ReturnType<typeof vi.fn>;
+    load: ReturnType<typeof vi.fn>;
+    unload: ReturnType<typeof vi.fn>;
+    listLoaded: ReturnType<typeof vi.fn>;
+  };
+  embedding: {
+    model: ReturnType<typeof vi.fn>;
+    load: ReturnType<typeof vi.fn>;
+    unload: ReturnType<typeof vi.fn>;
+    listLoaded: ReturnType<typeof vi.fn>;
+  };
+  system: {
+    listDownloadedModels: ReturnType<typeof vi.fn>;
+  };
+  files: {
+    prepareFile: ReturnType<typeof vi.fn>;
+    prepareImage: ReturnType<typeof vi.fn>;
+    prepareFileBase64: ReturnType<typeof vi.fn>;
+    prepareImageBase64: ReturnType<typeof vi.fn>;
+    parseDocument: ReturnType<typeof vi.fn>;
+    retrieve: ReturnType<typeof vi.fn>;
+  };
+};
+
+type MockHandle = {
+  identifier: string;
   name: string;
-  passed: boolean;
-  error?: string;
+  type: string;
+  sizeBytes: number;
+  isImage: () => boolean;
+  getFilePath: () => Promise<string>;
+};
+
+type MockPrediction = AsyncIterable<unknown> & {
+  result: ReturnType<typeof vi.fn>;
+};
+
+let mockClient: MockClient;
+let completePrediction: MockPrediction;
+let respondPrediction: MockPrediction;
+let embedResult: unknown;
+let actResult: { rounds: number; totalExecutionTimeSeconds: number };
+let tokenResult: string[];
+let countTokensResult: number;
+let toolMock: ReturnType<typeof vi.fn>;
+
+vi.mock("@lmstudio/sdk", () => ({
+  LMStudioClient: vi.fn().mockImplementation(() => mockClient),
+  tool: (...args: unknown[]) => toolMock(...args),
+}));
+
+function createPrediction(result: unknown, fragments: unknown[] = []): MockPrediction {
+  return {
+    async *[Symbol.asyncIterator]() {
+      for (const fragment of fragments) {
+        yield fragment;
+      }
+    },
+    result: vi.fn(async () => result),
+  };
 }
 
-const results: TestResult[] = [];
-
-function test(name: string, fn: () => void) {
-  try {
-    fn();
-    results.push({ name, passed: true });
-  } catch (error) {
-    results.push({ name, passed: false, error: String(error) });
-  }
+function createHandle(identifier: string, absolutePath: string, image = false): MockHandle {
+  return {
+    identifier,
+    name: path.basename(absolutePath),
+    type: image ? "image/png" : "text/plain",
+    sizeBytes: 12,
+    isImage: () => image,
+    getFilePath: async () => absolutePath,
+  };
 }
 
-function assert(condition: boolean, message: string) {
-  if (!condition) throw new Error(message);
+function createLlmModel(identifier: string) {
+  return {
+    identifier,
+    complete: vi.fn(() => completePrediction),
+    respond: vi.fn(() => respondPrediction),
+    act: vi.fn(async (_messages, _tools, options) => {
+      const message: MockMessage = {
+        getRole: () => "assistant",
+        getText: () => "tool result",
+        getToolCallRequests: () => [{ name: "list_loaded_models" }],
+        getToolCallResults: () => [{ name: "list_loaded_models", result: ["llm-model"] }],
+        hasFiles: () => false,
+      };
+
+      options?.onRoundStart?.(0);
+      options?.onPredictionFragment?.("fragment-a");
+      options?.onMessage?.(message as never);
+      options?.onRoundEnd?.(0);
+
+      return actResult;
+    }),
+  };
 }
 
-function assertEqual(actual: unknown, expected: unknown, message: string) {
-  if (actual !== expected) throw new Error(`${message}: expected ${expected}, got ${actual}`);
+function createEmbeddingModel(identifier: string) {
+  return {
+    identifier,
+    embed: vi.fn(async () => embedResult),
+    tokenize: vi.fn(async () => tokenResult),
+    countTokens: vi.fn(async () => countTokensResult),
+  };
 }
 
-// Test Helpers (extracted from backend)
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    !(value instanceof Date)
+function createClient(): MockClient {
+  const defaultLlmModel = createLlmModel("llm-model");
+  const defaultEmbeddingModel = createEmbeddingModel("embedding-model");
+
+  return {
+    llm: {
+      model: vi.fn(async (modelKey?: string) => (modelKey ? createLlmModel(modelKey) : defaultLlmModel)),
+      load: vi.fn(async () => undefined),
+      unload: vi.fn(async () => undefined),
+      listLoaded: vi.fn(async () => [{ identifier: "llm-model" }]),
+    },
+    embedding: {
+      model: vi.fn(async (modelKey?: string) =>
+        modelKey ? createEmbeddingModel(modelKey) : defaultEmbeddingModel
+      ),
+      load: vi.fn(async () => undefined),
+      unload: vi.fn(async () => undefined),
+      listLoaded: vi.fn(async () => [{ identifier: "embedding-model" }]),
+    },
+    system: {
+      listDownloadedModels: vi.fn(async (domain?: string) =>
+        domain ? [{ identifier: `${domain}-model` }] : [{ identifier: "llm-model" }, { identifier: "embedding-model" }]
+      ),
+    },
+    files: {
+      prepareFile: vi.fn(async (filePath: string) => createHandle(`file:${filePath}`, filePath, false)),
+      prepareImage: vi.fn(async (imagePath: string) => createHandle(`image:${imagePath}`, imagePath, true)),
+      prepareFileBase64: vi.fn(async (fileName: string) =>
+        createHandle(`base64:${fileName}`, path.resolve(fileName), false)
+      ),
+      prepareImageBase64: vi.fn(async (fileName: string) =>
+        createHandle(`image-base64:${fileName}`, path.resolve(fileName), true)
+      ),
+      parseDocument: vi.fn(async (handle: MockHandle) => ({ parsedFrom: handle.identifier })),
+      retrieve: vi.fn(async (query: string, handles: MockHandle[]) => ({
+        query,
+        handles: handles.map((handle) => handle.identifier),
+      })),
+    },
+  };
+}
+
+function createRequest(method: string, url: string, body?: unknown) {
+  const chunks = body === undefined ? [] : [Buffer.from(JSON.stringify(body))];
+  const request = Readable.from(chunks) as unknown as NodeJS.ReadableStream & {
+    method?: string;
+    url?: string;
+  };
+  request.method = method;
+  request.url = url;
+  return request;
+}
+
+function createResponse() {
+  const headers: Record<string, string> = {};
+  const chunks: string[] = [];
+  return {
+    statusCode: 0,
+    headers,
+    chunks,
+    setHeader: vi.fn((name: string, value: string) => {
+      headers[name.toLowerCase()] = value;
+    }),
+    write: vi.fn((chunk: string) => {
+      chunks.push(chunk);
+      return true;
+    }),
+    end: vi.fn((chunk?: string) => {
+      if (chunk) {
+        chunks.push(chunk);
+      }
+    }),
+    flushHeaders: vi.fn(),
+    get body() {
+      return chunks.join("");
+    },
+  } as unknown as NodeJS.WriteStream & {
+    statusCode: number;
+    headers: Record<string, string>;
+    chunks: string[];
+    body: string;
+  };
+}
+
+function createServer() {
+  return new LMStudioServer("http://localhost:1234", { client: mockClient as never });
+}
+
+beforeEach(() => {
+  mockClient = createClient();
+  completePrediction = createPrediction(
+    { content: "completion response", stats: { tokens: 12 } },
+    ["chunk-1", "chunk-2"]
   );
-}
-
-function getString(value: unknown, field: string): string {
-  if (typeof value !== "string" || value.trim() === "") {
-    throw new Error(`${field} must be a non-empty string`);
-  }
-  return value.trim();
-}
-
-function getOptionalString(value: unknown): string | undefined {
-  if (value === null || value === undefined || value === "") return undefined;
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  return trimmed === "" ? undefined : trimmed;
-}
-
-function getOptionalBoolean(value: unknown): boolean | undefined {
-  if (typeof value !== "boolean") return undefined;
-  return value;
-}
-
-function getOptionalNumber(value: unknown): number | undefined {
-  if (typeof value !== "number" || !isFinite(value)) return undefined;
-  return value;
-}
-
-function normalizeBaseUrl(apiUrl: string): string {
-  apiUrl = apiUrl.trim().replace(/\/$/, "");
-
-  if (apiUrl.startsWith("ws://") || apiUrl.startsWith("wss://")) return apiUrl;
-  if (apiUrl.startsWith("https://")) return "wss://" + apiUrl.slice(8);
-  if (apiUrl.startsWith("http://")) return "ws://" + apiUrl.slice(7);
-
-  return "ws://" + apiUrl;
-}
-
-// Tests: String Validation
-test("getString accepts non-empty string", () => {
-  assertEqual(getString("hello", "name"), "hello", "Should return trimmed string");
-});
-
-test("getString trims whitespace", () => {
-  assertEqual(getString("  hello  ", "name"), "hello", "Should trim whitespace");
-});
-
-test("getString rejects empty string", () => {
-  try {
-    getString("", "name");
-    throw new Error("Should have thrown");
-  } catch (e) {
-    assert(String(e).includes("non-empty"), "Should mention non-empty");
-  }
-});
-
-test("getString rejects non-string", () => {
-  try {
-    getString(123 as unknown, "name");
-    throw new Error("Should have thrown");
-  } catch (e) {
-    assert(String(e).includes("non-empty"), "Should mention non-empty");
-  }
-});
-
-// Tests: Optional String Validation
-test("getOptionalString accepts non-empty string", () => {
-  assertEqual(getOptionalString("hello"), "hello", "Should return string");
-});
-
-test("getOptionalString returns undefined for null", () => {
-  assertEqual(getOptionalString(null), undefined, "Should return undefined");
-});
-
-test("getOptionalString returns undefined for empty string", () => {
-  assertEqual(getOptionalString(""), undefined, "Should return undefined");
-});
-
-test("getOptionalString returns undefined for whitespace", () => {
-  assertEqual(getOptionalString("   "), undefined, "Should return undefined");
-});
-
-test("getOptionalString returns undefined for non-string", () => {
-  assertEqual(getOptionalString(123 as unknown), undefined, "Should return undefined");
-});
-
-// Tests: Optional Boolean Validation
-test("getOptionalBoolean accepts true", () => {
-  assertEqual(getOptionalBoolean(true), true, "Should return true");
-});
-
-test("getOptionalBoolean accepts false", () => {
-  assertEqual(getOptionalBoolean(false), false, "Should return false");
-});
-
-test("getOptionalBoolean returns undefined for non-boolean", () => {
-  assertEqual(getOptionalBoolean("true" as unknown), undefined, "Should return undefined");
-  assertEqual(getOptionalBoolean(1 as unknown), undefined, "Should return undefined");
-  assertEqual(getOptionalBoolean(null), undefined, "Should return undefined");
-});
-
-// Tests: Optional Number Validation
-test("getOptionalNumber accepts integer", () => {
-  assertEqual(getOptionalNumber(42), 42, "Should return number");
-});
-
-test("getOptionalNumber accepts float", () => {
-  assertEqual(getOptionalNumber(3.14), 3.14, "Should return float");
-});
-
-test("getOptionalNumber rejects Infinity", () => {
-  assertEqual(getOptionalNumber(Infinity), undefined, "Should reject Infinity");
-});
-
-test("getOptionalNumber rejects NaN", () => {
-  assertEqual(getOptionalNumber(NaN), undefined, "Should reject NaN");
-});
-
-test("getOptionalNumber returns undefined for non-number", () => {
-  assertEqual(getOptionalNumber("42" as unknown), undefined, "Should return undefined");
-  assertEqual(getOptionalNumber(null), undefined, "Should return undefined");
-});
-
-// Tests: URL Normalization
-test("normalizeBaseUrl converts http to ws", () => {
-  assertEqual(
-    normalizeBaseUrl("http://localhost:1234"),
-    "ws://localhost:1234",
-    "Should convert http to ws"
+  respondPrediction = createPrediction(
+    { content: "chat response", stats: { tokens: 14 } },
+    ["chat-1"]
   );
+  embedResult = { data: [[0.1, 0.2, 0.3]] };
+  actResult = { rounds: 2, totalExecutionTimeSeconds: 0.5 };
+  tokenResult = ["token-a", "token-b"];
+  countTokensResult = 2;
+  toolMock = vi.fn((definition: { name: string }) => ({ kind: "tool", name: definition.name }));
 });
 
-test("normalizeBaseUrl converts https to wss", () => {
-  assertEqual(
-    normalizeBaseUrl("https://example.com"),
-    "wss://example.com",
-    "Should convert https to wss"
-  );
+describe("helper utilities", () => {
+  it("normalizes LM Studio base URLs", () => {
+    expect(normalizeBaseUrl("http://localhost:1234")).toBe("ws://localhost:1234");
+    expect(normalizeBaseUrl("https://example.com")).toBe("wss://example.com");
+    expect(normalizeBaseUrl("localhost:1234")).toBe("ws://localhost:1234");
+  });
+
+  it("validates required and optional values", () => {
+    expect(getString("  prompt  ", "prompt")).toBe("  prompt  ");
+    expect(getOptionalString("  model  ")).toBe("  model  ");
+    expect(getOptionalString("")).toBeUndefined();
+    expect(getOptionalBoolean(true)).toBe(true);
+    expect(getOptionalBoolean("true")).toBeUndefined();
+    expect(getOptionalNumber(42)).toBe(42);
+    expect(getOptionalNumber(Number.NaN)).toBeUndefined();
+  });
+
+  it("serializes errors consistently", () => {
+    const apiError = new ApiError(400, "invalid_request", "bad request", { field: "prompt" });
+    expect(toSerializableError(apiError)).toEqual({
+      error: {
+        message: "bad request",
+        code: "invalid_request",
+        details: { field: "prompt" },
+      },
+    });
+    expect(toSerializableError(new Error("boom"))).toEqual({
+      error: {
+        message: "boom",
+        code: "internal_error",
+      },
+    });
+  });
+
+  it("reads JSON request bodies and rejects oversized payloads", async () => {
+    const request = createRequest("POST", "/v1/completions", { prompt: "hello" });
+    await expect(readJsonBody(request as never)).resolves.toEqual({ prompt: "hello" });
+
+    const tooLarge = createRequest("POST", "/v1/completions", { prompt: "hello" });
+    await expect(readJsonBody(tooLarge as never, 1)).rejects.toMatchObject({
+      statusCode: 413,
+      code: "payload_too_large",
+    });
+  });
+
+  it("serializes file handles and chat messages", () => {
+    const file = createHandle("file:1", "C:/tmp/file.txt");
+    expect(serializeFileHandle(file as never, "C:/tmp/file.txt")).toEqual({
+      identifier: "file:1",
+      name: "file.txt",
+      type: "text/plain",
+      sizeBytes: 12,
+      isImage: false,
+      absolutePath: "C:/tmp/file.txt",
+    });
+
+    const message = serializeMessage({
+      getRole: () => "assistant",
+      getText: () => "done",
+      getToolCallRequests: () => [{ name: "list_models" }],
+      getToolCallResults: () => [{ name: "list_models", result: [] }],
+      hasFiles: () => true,
+    } as never);
+
+    expect(message).toEqual({
+      role: "assistant",
+      content: "done",
+      toolCalls: [{ name: "list_models" }],
+      toolResults: [{ name: "list_models", result: [] }],
+      hasFiles: true,
+    });
+  });
+
+  it("builds chat messages with default roles and image handles", async () => {
+    const messages = await normalizeChatMessages(
+      [
+        { content: "Look at this", images: ["./cat.png"] },
+        { role: "assistant", content: "Already here" },
+      ],
+      mockClient as never
+    );
+
+    expect(messages[0]).toEqual({
+      role: "user",
+      content: "Look at this",
+      images: [expect.objectContaining({ identifier: expect.stringContaining("image:") })],
+    });
+    expect(mockClient.files.prepareImage).toHaveBeenCalledWith(path.resolve("./cat.png"));
+    expect(messages[1]).toEqual({
+      role: "assistant",
+      content: "Already here",
+      images: [],
+    });
+  });
+
+  it("selects built-in tools for model workflows", async () => {
+    const backend = createServer();
+    const tools = pickBuiltInTools(
+      ["list_downloaded_models", "prepare_file", "retrieve_documents"],
+      backend
+    );
+
+    expect(tools).toHaveLength(3);
+    expect(toolMock).toHaveBeenCalledTimes(3);
+
+    await (toolMock.mock.calls[0][0] as { implementation: () => Promise<unknown> }).implementation();
+    expect(mockClient.system.listDownloadedModels).toHaveBeenCalled();
+
+    expect(() => pickBuiltInTools(["list_downloaded_models", "unknown_tool" as never], backend)).toThrow(
+      expect.objectContaining({
+        statusCode: 400,
+        code: "unknown_tool",
+      })
+    );
+  });
+
+  it("rejects invalid request bodies for parsed routes", () => {
+    const server = createServer();
+
+    expect(() => (server as any).readRespondRequest({ messages: "nope" })).toThrow(
+      expect.objectContaining({
+        statusCode: 400,
+        code: "invalid_request",
+      })
+    );
+    expect(() => (server as any).readEmbedRequest({ input: 123 })).toThrow(
+      expect.objectContaining({
+        statusCode: 400,
+        code: "invalid_request",
+      })
+    );
+    expect(() => (server as any).readActRequest({ messages: [], toolNames: ["not-real"] })).toThrow(
+      expect.objectContaining({
+        statusCode: 400,
+        code: "invalid_request",
+      })
+    );
+  });
 });
 
-test("normalizeBaseUrl preserves ws", () => {
-  assertEqual(
-    normalizeBaseUrl("ws://localhost:1234"),
-    "ws://localhost:1234",
-    "Should preserve ws"
-  );
+describe("prompt and model behavior", () => {
+  it("maps inference options when generating text", async () => {
+    const server = createServer();
+    expect((server as any).mapPredictionOptions({
+      temperature: 0.4,
+      topP: 0.8,
+      topK: 20,
+      maxTokens: 256,
+    })).toEqual({
+      temperature: 0.4,
+      topPSampling: 0.8,
+      topKSampling: 20,
+      maxTokens: 256,
+    });
+
+    const result = await server.infer("Say hello", {
+      temperature: 0.4,
+      topP: 0.8,
+      topK: 20,
+      maxTokens: 256,
+    });
+
+    expect(result).toBe("completion response");
+    expect(mockClient.llm.model).toHaveBeenCalledWith();
+  });
+
+  it("loads models with merged load options and domain-specific GPU settings", async () => {
+    const server = createServer();
+    expect((server as any).buildLoadOptions("llm", {
+      name: "llm-instruct",
+      contextLength: 8192,
+      gpuOffload: 42,
+      keepModelInMemory: true,
+      tryMmap: false,
+      loadOptions: { custom: "value" },
+    })).toEqual({
+      custom: "value",
+      contextLength: 8192,
+      keepModelInMemory: true,
+      tryMmap: false,
+      gpu: { ratio: 42 },
+    });
+
+    await server.loadModel({
+      name: "llm-instruct",
+      domain: "llm",
+      contextLength: 8192,
+      gpuOffload: 42,
+      keepModelInMemory: true,
+      tryMmap: false,
+      loadOptions: { custom: "value" },
+    });
+
+    expect(mockClient.llm.load).toHaveBeenCalledWith("llm-instruct", {
+      custom: "value",
+      contextLength: 8192,
+      keepModelInMemory: true,
+      tryMmap: false,
+      gpu: { ratio: 42 },
+    });
+    expect(server.getCurrentModel()).toBe("llm-instruct");
+  });
+
+  it("unloads the selected model and clears the current model cache", async () => {
+    const server = createServer();
+    await server.loadModel({ name: "llm-instruct" });
+    expect(server.getCurrentModel()).toBe("llm-instruct");
+
+    await server.unloadModel("llm-instruct");
+    expect(mockClient.llm.unload).toHaveBeenCalledWith("llm-instruct");
+    expect(server.getCurrentModel()).toBeNull();
+  });
+
+  it("unloads the first loaded model when no identifier is provided", async () => {
+    const server = createServer();
+
+    await server.unloadModel(undefined, "embedding");
+    expect(mockClient.embedding.listLoaded).toHaveBeenCalled();
+    expect(mockClient.embedding.unload).toHaveBeenCalledWith("embedding-model");
+  });
+
+  it("lists models and loaded models by domain", async () => {
+    const server = createServer();
+
+    await expect(server.listModels()).resolves.toEqual([
+      { identifier: "llm-model" },
+      { identifier: "embedding-model" },
+    ]);
+    await expect(server.listModels("llm")).resolves.toEqual([{ identifier: "llm-model" }]);
+    await expect(server.listModels("embedding")).resolves.toEqual([{ identifier: "embedding-model" }]);
+    await expect(server.listLoadedModels()).resolves.toEqual([{ identifier: "llm-model" }]);
+    await expect(server.listLoadedModels("embedding")).resolves.toEqual([{ identifier: "embedding-model" }]);
+  });
+
+  it("resolves model keys explicitly for llm and embedding flows", async () => {
+    const server = createServer();
+
+    await expect((server as any).resolveLlmModel("alt-llm")).resolves.toMatchObject({
+      identifier: "alt-llm",
+    });
+    await expect((server as any).resolveEmbeddingModel("alt-embed")).resolves.toMatchObject({
+      identifier: "alt-embed",
+    });
+  });
+
+  it("prepares files, images, documents, and retrieval requests", async () => {
+    const server = createServer();
+
+    await expect(server.prepareFile("notes.txt")).resolves.toMatchObject({
+      identifier: expect.stringContaining("file:"),
+      absolutePath: path.resolve("notes.txt"),
+    });
+    await expect(server.prepareImage("cat.png")).resolves.toMatchObject({
+      identifier: expect.stringContaining("image:"),
+      absolutePath: path.resolve("cat.png"),
+      isImage: true,
+    });
+
+    await expect(server.parseDocument({ path: "notes.txt" })).resolves.toEqual({
+      parsedFrom: expect.stringContaining("file:"),
+    });
+
+    await expect(
+      server.retrieveDocuments({
+        query: "find the important bits",
+        files: [{ path: "notes.txt" }, { path: "other.txt" }],
+      })
+    ).resolves.toEqual({
+      query: "find the important bits",
+      handles: [expect.stringContaining("file:"), expect.stringContaining("file:")],
+    });
+  });
 });
 
-test("normalizeBaseUrl preserves wss", () => {
-  assertEqual(
-    normalizeBaseUrl("wss://example.com"),
-    "wss://example.com",
-    "Should preserve wss"
-  );
+describe("request parsing and HTTP dispatch", () => {
+  it("parses completion, chat, act, embed, and file requests", () => {
+    const server = createServer();
+
+    expect((server as any).readCompleteRequest({
+      modelKey: "llm-1",
+      prompt: "Write a haiku",
+      stream: true,
+      options: { temperature: 0.3 },
+    })).toEqual({
+      model: "llm-1",
+      prompt: "Write a haiku",
+      options: { temperature: 0.3 },
+      stream: true,
+    });
+
+    expect((server as any).readRespondRequest({
+      model: "chat-1",
+      messages: [{ role: "user", content: "hi", images: ["a.png"] }],
+      stream: false,
+    })).toEqual({
+      model: "chat-1",
+      messages: [{ role: "user", content: "hi", images: ["a.png"] }],
+      options: undefined,
+      stream: false,
+    });
+
+    expect((server as any).readActRequest({
+      messages: [{ content: "use tools" }],
+      toolNames: ["list_loaded_models", "prepare_file"],
+    })).toEqual({
+      model: undefined,
+      messages: [{ role: undefined, content: "use tools", images: undefined }],
+      options: undefined,
+      toolNames: ["list_loaded_models", "prepare_file"],
+      stream: undefined,
+    });
+
+    expect((server as any).readEmbedRequest({
+      model: "embed-1",
+      input: ["one", "two"],
+    })).toEqual({
+      model: "embed-1",
+      input: ["one", "two"],
+    });
+
+    expect((server as any).readFileRequest({
+      path: "notes.txt",
+      base64: "ZGF0YQ==",
+      fileName: "notes.txt",
+    })).toEqual({
+      path: "notes.txt",
+      base64: "ZGF0YQ==",
+      fileName: "notes.txt",
+    });
+  });
+
+  it("streams completion responses as SSE events", async () => {
+    const server = createServer();
+    const req = createRequest("POST", "/v1/completions?stream=true", {
+      prompt: "Tell me a joke",
+      model: "llm-model",
+    });
+    const res = createResponse();
+
+    await (server as any).handleRequest(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toBe("text/event-stream; charset=utf-8");
+    expect(res.body).toContain("event: fragment");
+    expect(res.body).toContain("event: result");
+    expect(res.body).toContain("completion response");
+  });
+
+  it("streams act responses with round and message events", async () => {
+    const server = createServer();
+    const req = createRequest("POST", "/api/llm/act?stream=true", {
+      messages: [{ role: "user", content: "Plan the steps" }],
+      toolNames: ["list_loaded_models"],
+    });
+    const res = createResponse();
+
+    await (server as any).handleRequest(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain("event: roundStart");
+    expect(res.body).toContain("event: message");
+    expect(res.body).toContain("event: roundEnd");
+    expect(res.body).toContain("event: result");
+    expect(res.body).toContain("tool result");
+  });
+
+  it("dispatches JSON completion, chat, embedding, token, and file endpoints", async () => {
+    const server = createServer();
+
+    const completionRes = createResponse();
+    await (server as any).handleRequest(
+      createRequest("POST", "/v1/completions", { prompt: "Summarize this" }),
+      completionRes
+    );
+    expect(JSON.parse(completionRes.body)).toEqual({
+      model: "llm-model",
+      content: "completion response",
+      stats: { tokens: 12 },
+    });
+
+    const chatRes = createResponse();
+    await (server as any).handleRequest(
+      createRequest("POST", "/v1/chat/completions", {
+        messages: [{ content: "Hello", images: ["./cat.png"] }],
+      }),
+      chatRes
+    );
+    expect(JSON.parse(chatRes.body)).toEqual({
+      model: "llm-model",
+      content: "chat response",
+      stats: { tokens: 14 },
+    });
+    expect(mockClient.files.prepareImage).toHaveBeenCalledWith(path.resolve("./cat.png"));
+
+    const embeddingRes = createResponse();
+    await (server as any).handleRequest(
+      createRequest("POST", "/v1/embeddings", { input: "embed me" }),
+      embeddingRes
+    );
+    expect(JSON.parse(embeddingRes.body)).toEqual({
+      model: "embedding-model",
+      result: { data: [[0.1, 0.2, 0.3]] },
+    });
+
+    const tokenizeRes = createResponse();
+    await (server as any).handleRequest(
+      createRequest("POST", "/api/embedding/tokenize", { input: "embed me" }),
+      tokenizeRes
+    );
+    expect(JSON.parse(tokenizeRes.body)).toEqual({
+      model: "embedding-model",
+      tokens: ["token-a", "token-b"],
+    });
+
+    const countTokensRes = createResponse();
+    await (server as any).handleRequest(
+      createRequest("POST", "/api/embedding/count-tokens", { input: "embed me" }),
+      countTokensRes
+    );
+    expect(JSON.parse(countTokensRes.body)).toEqual({
+      model: "embedding-model",
+      tokenCount: 2,
+    });
+
+    const fileRes = createResponse();
+    await (server as any).handleRequest(
+      createRequest("POST", "/api/files/prepare-file", { path: "notes.txt" }),
+      fileRes
+    );
+    expect(JSON.parse(fileRes.body)).toMatchObject({
+      identifier: expect.stringContaining("file:"),
+      absolutePath: path.resolve("notes.txt"),
+    });
+
+    const retrieveRes = createResponse();
+    await (server as any).handleRequest(
+      createRequest("POST", "/api/files/retrieve", {
+        query: "important",
+        files: ["notes.txt", { path: "other.txt" }],
+      }),
+      retrieveRes
+    );
+    expect(JSON.parse(retrieveRes.body)).toEqual({
+      query: "important",
+      handles: [expect.stringContaining("file:"), expect.stringContaining("file:")],
+    });
+  });
+
+  it("returns a structured error for invalid routes", async () => {
+    const server = createServer();
+    const res = createResponse();
+    await (server as any).handleRequest(createRequest("GET", "/missing"), res);
+
+    expect(res.statusCode).toBe(404);
+    expect(JSON.parse(res.body)).toEqual({
+      error: {
+        message: "No route matches GET /missing.",
+        code: "not_found",
+      },
+    });
+  });
 });
-
-test("normalizeBaseUrl adds ws to bare host", () => {
-  assertEqual(normalizeBaseUrl("localhost:1234"), "ws://localhost:1234", "Should add ws prefix");
-});
-
-test("normalizeBaseUrl removes trailing slash", () => {
-  assertEqual(normalizeBaseUrl("http://localhost:1234/"), "ws://localhost:1234", "Should remove slash");
-});
-
-// Tests: Record Type Guard
-test("isRecord identifies plain objects", () => {
-  assert(isRecord({}), "Should identify empty object");
-  assert(isRecord({ key: "value" }), "Should identify object with properties");
-});
-
-test("isRecord rejects arrays", () => {
-  assert(!isRecord([]), "Should reject array");
-  assert(!isRecord([1, 2, 3]), "Should reject array");
-});
-
-test("isRecord rejects null and primitives", () => {
-  assert(!isRecord(null), "Should reject null");
-  assert(!isRecord(undefined), "Should reject undefined");
-  assert(!isRecord("string"), "Should reject string");
-  assert(!isRecord(42), "Should reject number");
-  assert(!isRecord(true), "Should reject boolean");
-});
-
-test("isRecord rejects Date objects", () => {
-  assert(!isRecord(new Date()), "Should reject Date");
-});
-
-// Report results
-console.log("\n========== Backend Parser Tests ==========\n");
-
-let passed = 0;
-let failed = 0;
-
-for (const result of results) {
-  if (result.passed) {
-    console.log(`✅ ${result.name}`);
-    passed++;
-  } else {
-    console.log(`❌ ${result.name}`);
-    console.log(`   Error: ${result.error}`);
-    failed++;
-  }
-}
-
-console.log(`\n========== Results ==========`);
-console.log(`Passed: ${passed}`);
-console.log(`Failed: ${failed}`);
-console.log(`Total: ${results.length}`);
-
-if (failed > 0) {
-  process.exit(1);
-}
