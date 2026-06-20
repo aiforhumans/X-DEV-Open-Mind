@@ -33,29 +33,58 @@ X-DEV-Open-Mind/
 │   ├── FINDINGS.md              # Implementation issues & recommendations
 │   └── BUILD_AND_TEST_REPORT.md # Verification status & build results
 │
-└── package.json (root)          # Workspace scripts
+├── start.bat                    # 🚀 MAIN LAUNCHER (starts backend + Obsidian)
+├── setup.bat                    # Install dependencies & build
+├── stop-all.bat                 # Stop all running processes
+├── clean-build.bat              # Full clean rebuild
+├── QUICK_START.md               # User-friendly setup guide
+├── TROUBLESHOOTING.md           # Common issues & fixes
+├── package.json (root)          # Workspace scripts
+└── README.md                    # This file
 ```
 
-## 🚀 Quick Start
+**Windows Users: Just run `start.bat`!**
+
+## 🚀 Quick Start (Windows)
 
 ### Prerequisites
 
-- **Node.js 20+** and **npm 8+**
-- **LM Studio** running locally at `http://localhost:1234`
-- **Obsidian** (for plugin usage)
+- **Windows 10/11**
+- **Node.js 20+** and **npm 8+** (download from https://nodejs.org/)
+- **LM Studio** (download from https://lmstudio.ai/)
+- **Obsidian** (download from https://obsidian.md/)
 
-### Installation
+### Installation & Launch (One Command!)
+
+**First time:**
+```batch
+setup.bat
+```
+
+This installs dependencies and builds everything.
+
+**Every time after:**
+```batch
+start.bat
+```
+
+This launches both the backend server + Obsidian plugin automatically.
+
+✨ That's it! The console will stay open showing backend logs.
+
+### For macOS/Linux Users
 
 ```bash
-# Install all dependencies
+# Install dependencies
 npm install
 
 # Build both projects
 npm run build:all
 
-# Or build individually
-npm run build:lm        # LM Studio backend
-npm run build:obsidian  # Obsidian plugin
+# Start the backend server
+npm start -w X-DEV-LM-Studio
+
+# Launch Obsidian separately and configure the plugin
 ```
 
 ### Verify Build Success
@@ -67,6 +96,10 @@ npm run build:all
 # X-DEV-LM-Studio: ✅ index.js + settingsIntegration.js
 # X-DEV-Obsidian: ✅ main.js (1009 KB)
 ```
+
+### Need Help?
+
+See **[QUICK_START.md](./QUICK_START.md)** for detailed setup instructions and screenshots.
 
 ## 📦 Components
 
