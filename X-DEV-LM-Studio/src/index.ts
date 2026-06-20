@@ -80,6 +80,7 @@ export interface BackendOptions {
   clientIdentifier?: string;
   clientPasskey?: string;
   verboseErrorMessages?: boolean;
+  requestTimeoutMs?: number;
   client?: LMStudioClient;
 }
 
@@ -449,6 +450,7 @@ export function pickBuiltInTools(toolNames: BuiltinToolName[], backend: LMStudio
 export class LMStudioServer {
   private readonly client: LMStudioClient;
   private readonly baseUrl: string;
+  private readonly requestTimeoutMs: number;
   private readonly currentModels: Record<ModelDomain, string | null> = {
     llm: null,
     embedding: null,
@@ -457,6 +459,7 @@ export class LMStudioServer {
 
   constructor(apiUrl = "http://localhost:1234", options: BackendOptions = {}) {
     this.baseUrl = normalizeBaseUrl(options.apiUrl ?? apiUrl);
+    this.requestTimeoutMs = Math.max(1, options.requestTimeoutMs ?? 10_000);
     this.client =
       options.client ??
       new LMStudioClient({
@@ -498,17 +501,36 @@ export class LMStudioServer {
   }
 
   async listModels(domain?: ModelDomain): Promise<unknown[]> {
-    if (domain === "llm") {
-      return this.client.system.listDownloadedModels("llm");
+    try {
+      if (domain === "llm") {
+        return await this.withRequestTimeout("list downloaded llm models", this.client.system.listDownloadedModels("llm"));
+      }
+      if (domain === "embedding") {
+        return await this.withRequestTimeout("list downloaded embedding models", this.client.system.listDownloadedModels("embedding"));
+      }
+      return await this.withRequestTimeout("list downloaded models", this.client.system.listDownloadedModels());
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.code !== "lmstudio_timeout") {
+        throw error;
+      }
+
+      if (domain === "llm" || domain === "embedding") {
+        return this.listLoadedModels(domain);
+      }
+
+      const [llmLoaded, embeddingLoaded] = await Promise.all([
+        this.listLoadedModels("llm"),
+        this.listLoadedModels("embedding"),
+      ]);
+      return [...llmLoaded, ...embeddingLoaded];
     }
-    if (domain === "embedding") {
-      return this.client.system.listDownloadedModels("embedding");
-    }
-    return this.client.system.listDownloadedModels();
   }
 
   async listLoadedModels(domain: ModelDomain = "llm"): Promise<unknown[]> {
-    return this.getNamespace(domain).listLoaded();
+    return this.withRequestTimeout(
+      `list loaded ${domain} models`,
+      this.getNamespace(domain).listLoaded() as Promise<unknown[]>
+    );
   }
 
   getCurrentModel(): string | null {
@@ -682,10 +704,43 @@ export class LMStudioServer {
   }
 
   private async getHealth(): Promise<Record<string, unknown>> {
-    return {
-      ok: true,
-      baseUrl: this.baseUrl,
-    };
+    try {
+      await this.listLoadedModels("llm");
+      return {
+        ok: true,
+        baseUrl: this.baseUrl,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        baseUrl: this.baseUrl,
+        error: toSerializableError(error).error.message,
+      };
+    }
+  }
+
+  private async withRequestTimeout<T>(operation: string, promise: Promise<T>): Promise<T> {
+    let timer: NodeJS.Timeout | null = null;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+          timer = setTimeout(() => {
+            reject(
+              new ApiError(
+                504,
+                "lmstudio_timeout",
+                `Timed out while attempting to ${operation} from LM Studio after ${this.requestTimeoutMs}ms.`
+              )
+            );
+          }, this.requestTimeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
   }
 
   private readDomain(url: URL): ModelDomain | undefined {
@@ -1146,10 +1201,12 @@ if (require.main === module) {
   const apiUrl = process.env.LM_STUDIO_BASE_URL ?? process.env.LM_STUDIO_URL ?? "http://localhost:1234";
   const clientIdentifier = process.env.CLIENT_IDENTIFIER;
   const clientPasskey = process.env.CLIENT_PASSKEY;
+  const requestTimeoutMs = Number(process.env.REQUEST_TIMEOUT_MS ?? "10000");
 
   const server = new LMStudioServer(apiUrl, {
     clientIdentifier,
     clientPasskey,
+    requestTimeoutMs: Number.isFinite(requestTimeoutMs) ? requestTimeoutMs : 10000,
     verboseErrorMessages: process.env.VERBOSE_ERRORS === "true",
   });
   void server.start(port, host).then(() => {

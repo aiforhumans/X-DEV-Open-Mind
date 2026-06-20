@@ -526,6 +526,34 @@ describe("prompt and model behavior", () => {
     await expect(server.listLoadedModels("embedding")).resolves.toEqual([{ identifier: "embedding-model" }]);
   });
 
+  it("falls back to loaded models when downloaded model listing times out", async () => {
+    const server = new LMStudioServer("http://localhost:1234", {
+      client: mockClient as never,
+      requestTimeoutMs: 10,
+    });
+    mockClient.system.listDownloadedModels.mockImplementation(() => new Promise(() => {}));
+
+    await expect(server.listModels("llm")).resolves.toEqual([{ identifier: "llm-model" }]);
+    await expect(server.listModels("embedding")).resolves.toEqual([{ identifier: "embedding-model" }]);
+    await expect(server.listModels()).resolves.toEqual([
+      { identifier: "llm-model" },
+      { identifier: "embedding-model" },
+    ]);
+  });
+
+  it("times out stalled loaded-model calls", async () => {
+    const server = new LMStudioServer("http://localhost:1234", {
+      client: mockClient as never,
+      requestTimeoutMs: 10,
+    });
+    mockClient.llm.listLoaded.mockImplementation(() => new Promise(() => {}));
+
+    await expect(server.listLoadedModels("llm")).rejects.toMatchObject({
+      statusCode: 504,
+      code: "lmstudio_timeout",
+    });
+  });
+
   it("resolves model keys explicitly for llm and embedding flows", async () => {
     const server = createServer();
 
@@ -826,6 +854,23 @@ describe("request parsing and HTTP dispatch", () => {
         message: "No route matches GET /missing.",
         code: "not_found",
       },
+    });
+  });
+
+  it("reports unhealthy status when LM Studio cannot be reached", async () => {
+    const server = new LMStudioServer("http://localhost:1234", {
+      client: mockClient as never,
+      requestTimeoutMs: 10,
+    });
+    mockClient.llm.listLoaded.mockImplementation(() => new Promise(() => {}));
+
+    const res = createResponse();
+    await (server as any).handleRequest(createRequest("GET", "/health"), res);
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toMatchObject({
+      ok: false,
+      baseUrl: "ws://localhost:1234",
     });
   });
 });

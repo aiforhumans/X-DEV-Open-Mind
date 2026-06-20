@@ -10,15 +10,31 @@ export function useModelStatus(apiUrl: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
+  const readLoadedModel = async (domain: "llm" | "embedding"): Promise<string | null> => {
+    const response = await fetch(`${apiUrl}/v1/models/loaded?domain=${domain}`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch ${domain} model status`);
+    }
+
+    const payload = await response.json();
+    const loaded = Array.isArray(payload?.data) ? payload.data : [];
+    const first = loaded[0];
+    if (typeof first === "string") {
+      return first;
+    }
+    if (first && typeof first === "object") {
+      const key = (first as Record<string, unknown>).identifier;
+      return typeof key === "string" && key.trim() ? key : null;
+    }
+    return null;
+  };
+
   const fetchStatus = async () => {
     try {
-      const response = await fetch(`${apiUrl}/v1/models/loaded`);
-      if (!response.ok) throw new Error("Failed to fetch model status");
-      
-      const data = await response.json();
+      const [llm, embedding] = await Promise.all([readLoadedModel("llm"), readLoadedModel("embedding")]);
       setStatus({
-        llm: Array.isArray(data.llm) && data.llm.length > 0 ? data.llm[0] : null,
-        embedding: Array.isArray(data.embedding) && data.embedding.length > 0 ? data.embedding[0] : null,
+        llm,
+        embedding,
       });
       setError(null);
     } catch (err) {

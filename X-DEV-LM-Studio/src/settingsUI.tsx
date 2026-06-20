@@ -40,6 +40,15 @@ interface TestResult {
   timestamp: number;
 }
 
+const defaultBackendUrl =
+  typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+const defaultBackendHost =
+  typeof window !== "undefined" ? window.location.hostname : "localhost";
+const defaultBackendPort =
+  typeof window !== "undefined" && window.location.port
+    ? Number(window.location.port)
+    : 3000;
+
 const SettingsUI: React.FC = () => {
   // Model Config State
   const [modelName, setModelName] = useState("");
@@ -57,9 +66,9 @@ const SettingsUI: React.FC = () => {
   const [maxTokens, setMaxTokens] = useState(512);
 
   // Backend Settings State
-  const [host, setHost] = useState("localhost");
-  const [port, setPort] = useState(1234);
-  const [apiUrl, setApiUrl] = useState("http://localhost:1234");
+  const [host, setHost] = useState(defaultBackendHost);
+  const [port, setPort] = useState(defaultBackendPort);
+  const [apiUrl, setApiUrl] = useState(defaultBackendUrl);
   const [clientIdentifier, setClientIdentifier] = useState("");
   const [clientPasskey, setClientPasskey] = useState("");
   const [apiToken, setApiToken] = useState("");
@@ -232,8 +241,8 @@ const SettingsUI: React.FC = () => {
           setMaxTokens(settings.inference.maxTokens || 512);
         }
         if (settings.backend) {
-          setHost(settings.backend.host || "localhost");
-          setPort(settings.backend.port || 1234);
+          setHost(settings.backend.host || defaultBackendHost);
+          setPort(settings.backend.port || defaultBackendPort);
           setClientIdentifier(settings.backend.clientIdentifier || "");
           setClientPasskey(settings.backend.clientPasskey || "");
           setApiToken(settings.backend.apiToken || "");
@@ -259,8 +268,8 @@ const SettingsUI: React.FC = () => {
     setTopP(0.9);
     setTopK(40);
     setMaxTokens(512);
-    setHost("localhost");
-    setPort(1234);
+    setHost(defaultBackendHost);
+    setPort(defaultBackendPort);
     setClientIdentifier("");
     setVerboseErrors(false);
   };
