@@ -15,6 +15,8 @@
     "dev:all": "concurrently \"npm run dev -w X-DEV-LM-Studio\" \"npm run dev -w X-DEV-Obsidian\"",
     "dev:lm": "npm run dev -w X-DEV-LM-Studio",
     "dev:obsidian": "npm run dev -w X-DEV-Obsidian",
+    "test": "npm test -w X-DEV-LM-Studio",
+    "test:lm": "npm test -w X-DEV-LM-Studio",
     "start": "npm start -w X-DEV-LM-Studio",
     "clean": "rimraf X-DEV-LM-Studio/dist X-DEV-LM-Studio/node_modules X-DEV-Obsidian/main.js X-DEV-Obsidian/node_modules",
     "help": "node build-help.js"

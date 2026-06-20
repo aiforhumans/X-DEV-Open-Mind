@@ -1,6 +1,6 @@
 # X-DEV Open Mind: Local LLM Development Platform
 
-**Status:** Production-ready backend + Obsidian plugin. The backend now serves a tabbed built-in HTML UI with a Playground.
+**Status:** Production-ready backend + Obsidian plugin. The backend now serves a tabbed browser console for chat, completions, embeddings, act/tool-calling, files, and model management.
 
 A complete development platform for building local LLM applications using LM Studio and Obsidian integration.
 
@@ -43,7 +43,7 @@ X-DEV-Open-Mind/
 └── README.md                    # This file
 ```
 
-**Windows Users: Just run `start.bat`!**
+**Windows Users: Run `start.bat` for tests, or `npm start` for the server.**
 
 ## 🚀 Quick Start (Windows)
 
@@ -87,6 +87,9 @@ npm install
 # Build both projects
 npm run build:all
 
+# Run the backend test suite
+npm test
+
 # Start the backend server
 npm start -w X-DEV-LM-Studio
 
@@ -111,21 +114,18 @@ See **[QUICK_START.md](./QUICK_START.md)** for detailed setup instructions and s
 
 ### X-DEV-LM-Studio Backend
 
-**Production-ready HTTP server** wrapping LM Studio SDK with a built-in tabbed HTML UI.
+**Production-ready HTTP server** wrapping LM Studio SDK with a built-in tabbed browser console.
 
 **Features:**
-- 🎮 Interactive Playground for testing models
-- 📊 Live model status display (updates every 5 seconds)
+- 📊 Live model status display
 - 🔔 Toast notifications for user feedback
-- ⚡ Loading spinners on all operations
-- 🧭 Settings and Playground tabs served at `/`
+- ⚡ Loading spinners on operations
+- 🧭 Tabbed console served at `/`
 - Health checks and model management
-- Text completion and chat endpoints
-- Embedding model support
-- Tool-calling (agent) execution
+- Chat, completions, embeddings, and act endpoints
 - Server-sent event streaming
 - File preparation and document parsing
-- Built-in HTML UI at `/` with Playground tab
+- Built-in HTML browser console at `/`
 
 **Build Status:** ✅ Compiles cleanly
 - Only backend files included (React UI excluded)
@@ -223,6 +223,7 @@ npm run dev:all          # Dev watch mode (parallel)
 # LM Studio
 npm run build -w X-DEV-LM-Studio      # Build backend
 npm run dev -w X-DEV-LM-Studio        # Watch mode
+npm test                              # Run backend tests
 npm start -w X-DEV-LM-Studio          # Run server
 
 # Obsidian

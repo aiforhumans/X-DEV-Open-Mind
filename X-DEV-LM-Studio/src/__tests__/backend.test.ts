@@ -570,6 +570,23 @@ describe("request parsing and HTTP dispatch", () => {
     });
   });
 
+  it("serves the browser console UI at /", async () => {
+    const server = createServer();
+    const res = createResponse();
+
+    await (server as any).handleRequest(createRequest("GET", "/"), res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toBe("text/html; charset=utf-8");
+    expect(res.body).toContain("X-DEV LM Studio Console");
+    expect(res.body).toContain("System message");
+    expect(res.body).toContain("Conversation history");
+    expect(res.body).toContain("Completions");
+    expect(res.body).toContain("Embeddings");
+    expect(res.body).toContain("Act");
+    expect(res.body).toContain("Files");
+  });
+
   it("streams completion responses as SSE events", async () => {
     const server = createServer();
     const req = createRequest("POST", "/v1/completions?stream=true", {
@@ -585,6 +602,27 @@ describe("request parsing and HTTP dispatch", () => {
     expect(res.body).toContain("event: fragment");
     expect(res.body).toContain("event: result");
     expect(res.body).toContain("completion response");
+  });
+
+  it("streams chat responses as SSE events", async () => {
+    const server = createServer();
+    const req = createRequest("POST", "/v1/chat/completions", {
+      messages: [
+        { role: "system", content: "Be brief" },
+        { role: "user", content: "Hello" },
+      ],
+      model: "llm-model",
+      stream: true,
+    });
+    const res = createResponse();
+
+    await (server as any).handleRequest(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toBe("text/event-stream; charset=utf-8");
+    expect(res.body).toContain("event: fragment");
+    expect(res.body).toContain("event: result");
+    expect(res.body).toContain("chat response");
   });
 
   it("streams act responses with round and message events", async () => {
@@ -622,7 +660,10 @@ describe("request parsing and HTTP dispatch", () => {
     const chatRes = createResponse();
     await (server as any).handleRequest(
       createRequest("POST", "/v1/chat/completions", {
-        messages: [{ content: "Hello", images: ["./cat.png"] }],
+        messages: [
+          { role: "system", content: "You are helpful." },
+          { content: "Hello", images: ["./cat.png"] },
+        ],
       }),
       chatRes
     );
@@ -684,6 +725,40 @@ describe("request parsing and HTTP dispatch", () => {
     expect(JSON.parse(retrieveRes.body)).toEqual({
       query: "important",
       handles: [expect.stringContaining("file:"), expect.stringContaining("file:")],
+    });
+
+    const loadRes = createResponse();
+    await (server as any).handleRequest(
+      createRequest("POST", "/v1/models/load", {
+        name: "embedding-model",
+        domain: "embedding",
+        contextLength: 2048,
+      }),
+      loadRes
+    );
+    expect(JSON.parse(loadRes.body)).toEqual({ ok: true });
+    expect(mockClient.embedding.load).toHaveBeenCalledWith("embedding-model", { contextLength: 2048 });
+
+    const unloadRes = createResponse();
+    await (server as any).handleRequest(
+      createRequest("POST", "/v1/models/unload", {
+        identifier: "embedding-model",
+        domain: "embedding",
+      }),
+      unloadRes
+    );
+    expect(JSON.parse(unloadRes.body)).toEqual({ ok: true });
+    expect(mockClient.embedding.unload).toHaveBeenCalledWith("embedding-model");
+
+    const parseDocumentRes = createResponse();
+    await (server as any).handleRequest(
+      createRequest("POST", "/api/files/parse-document", {
+        file: { path: "notes.txt" },
+      }),
+      parseDocumentRes
+    );
+    expect(JSON.parse(parseDocumentRes.body)).toEqual({
+      parsedFrom: expect.stringContaining("file:"),
     });
   });
 

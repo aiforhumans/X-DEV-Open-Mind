@@ -75,7 +75,7 @@ REM ============================================================================
 echo [3/3] Running LM Studio test suite...
 echo.
 
-call npm test -w X-DEV-LM-Studio
+call npm test
 set "TEST_EXIT_CODE=%ERRORLEVEL%"
 
 echo.

@@ -8,7 +8,7 @@ If you see: **"Failed to authenticate: The LM Studio API token provided was not 
 
 ---
 
-## Installation & Launch (Windows)
+## Installation & Test (Windows)
 
 ### Prerequisites
 - **Windows 10/11**
@@ -46,7 +46,7 @@ This will:
 
 > Takes 2-5 minutes on first run
 
-### 3️⃣ Start the System
+### 3️⃣ Run the Test Launcher
 
 **Windows Only:**
 ```batch
@@ -127,7 +127,7 @@ Then verify:
 
 | File | What It Does |
 |------|-------------|
-| `start.bat` | **Use this!** Launches everything (backend + Obsidian) |
+| `start.bat` | Runs the LM Studio backend test suite |
 | `setup.bat` | Install dependencies and build projects (run once) |
 | `stop-all.bat` | Kill all running processes (Node.js, Obsidian) |
 | `clean-build.bat` | Full clean rebuild (if something breaks) |
@@ -136,7 +136,7 @@ Then verify:
 
 ## Folder Shortcuts
 
-**Create a desktop shortcut to launch instantly:**
+**Create a desktop shortcut to run instantly:**
 
 1. Right-click on desktop → **New → Shortcut**
 2. Paste this path:
@@ -148,19 +148,17 @@ Then verify:
 4. Click Finish
 5. Right-click the shortcut → **Properties → Advanced** → Check **Run as administrator** (optional)
 
-Now double-click to launch!
+Now double-click to run the test launcher!
 
 ---
 
-## What's Running
+## What It Does
 
 After you run `start.bat`:
 
-| Component | Running On | What It Does |
-|-----------|-----------|-------------|
-| **Backend Server** | `http://localhost:3000` | Provides chat, completions, embeddings APIs |
-| **LM Studio** | `http://localhost:1234` | Local LLM inference (must be running separately) |
-| **Obsidian Plugin** | In your Obsidian vault | Integrates with backend to ask questions |
+- Runs the LM Studio backend test suite
+- Leaves the console open so you can read the output
+- Does not start the backend server or the Obsidian plugin
 
 ---
 
