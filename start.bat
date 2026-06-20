@@ -1,7 +1,7 @@
 @echo off
 REM ============================================================================
 REM X-DEV Open Mind - LM Studio Launcher
-REM Runs the LM Studio backend test suite, then starts the UI server
+REM Runs the LM Studio backend test suite, rebuilds the backend, then starts the UI server
 REM ============================================================================
 
 setlocal enabledelayedexpansion
@@ -11,7 +11,7 @@ set "TEST_EXIT_CODE=0"
 echo.
 echo ============================================================================
 echo  X-DEV Open Mind - Launcher
-echo  Running LM Studio backend tests and starting the UI
+echo  Running LM Studio backend tests, rebuilding, and starting the UI
 echo ============================================================================
 echo.
 
@@ -72,7 +72,7 @@ echo.
 REM ============================================================================
 REM STEP 3: Run LM Studio test suite
 REM ============================================================================
-echo [3/4] Running LM Studio test suite...
+echo [3/5] Running LM Studio test suite...
 echo.
 
 call npm test
@@ -96,7 +96,20 @@ if %TEST_EXIT_CODE% NEQ 0 (
 )
 
 echo.
-echo [4/4] Starting the LM Studio UI server...
+echo [4/5] Rebuilding the LM Studio backend...
+echo.
+
+call npm run build -w X-DEV-LM-Studio
+if %ERRORLEVEL% NEQ 0 (
+    echo ERROR: Failed to build LM Studio backend!
+    pause
+    exit /b 1
+)
+
+echo OK - LM Studio backend rebuilt
+echo.
+
+echo [5/5] Starting the LM Studio UI server...
 echo This will open the browser UI at http://localhost:3000
 echo.
 

@@ -52,6 +52,7 @@ X-DEV-Open-Mind/
 If you see: **"Failed to authenticate: The LM Studio API token provided was not recognized"**
 
 👉 See **[AUTHENTICATION_FIX.md](./AUTHENTICATION_FIX.md)** for the 2-minute solution
+This backend now auto-loads the repo `.env` and accepts `LM_STUDIO_API_TOKEN` or `CLIENT_PASSKEY`.
 
 ### Prerequisites
 
@@ -74,7 +75,7 @@ This installs dependencies and builds everything.
 start.bat
 ```
 
-This runs the LM Studio backend test suite, then starts the browser UI.
+This runs the LM Studio backend test suite, rebuilds the backend, then starts the browser UI.
 
 ✨ That's it! The console will stay open showing test output.
 

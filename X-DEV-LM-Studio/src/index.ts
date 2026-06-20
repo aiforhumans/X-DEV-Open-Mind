@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "http";
+import fs from "fs";
 import path from "path";
 import { buildUiHtml } from "./ui-console";
 import { LMStudioClient, tool, type ChatLike, type ChatMessage, type ChatMessageInput, type FileHandle, type LLMActionOpts, type LLMPredictionOpts, type LLMRespondOpts, type Tool } from "@lmstudio/sdk";
@@ -154,6 +155,80 @@ function htmlResponse(res: ServerResponse, statusCode: number, body: string): vo
   res.statusCode = statusCode;
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.end(body);
+}
+
+function applyEnvironmentFile(filePath: string): void {
+  if (!fs.existsSync(filePath)) {
+    return;
+  }
+
+  const content = fs.readFileSync(filePath, "utf8");
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) {
+      continue;
+    }
+
+    const equalsIndex = line.indexOf("=");
+    if (equalsIndex <= 0) {
+      continue;
+    }
+
+    const key = line.slice(0, equalsIndex).trim();
+    if (!key || process.env[key] !== undefined) {
+      continue;
+    }
+
+    let value = line.slice(equalsIndex + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+
+    process.env[key] = value;
+  }
+}
+
+export function loadRuntimeEnvironment(): void {
+  const envFiles = [
+    path.resolve(__dirname, "..", "..", ".env"),
+    path.resolve(__dirname, "..", "..", ".env.local"),
+    path.resolve(__dirname, "..", ".env"),
+    path.resolve(__dirname, "..", ".env.local"),
+  ];
+
+  for (const filePath of envFiles) {
+    applyEnvironmentFile(filePath);
+  }
+
+  if (process.env.LM_STUDIO_API_URL && !process.env.LM_STUDIO_BASE_URL && !process.env.LM_STUDIO_URL) {
+    process.env.LM_STUDIO_BASE_URL = process.env.LM_STUDIO_API_URL;
+  }
+
+  if (process.env.LM_STUDIO_API_TOKEN) {
+    if (!process.env.CLIENT_PASSKEY) {
+      process.env.CLIENT_PASSKEY = process.env.LM_STUDIO_API_TOKEN;
+    }
+  }
+
+  if (process.env.LM_STUDIO_CLIENT_PASSKEY && !process.env.CLIENT_PASSKEY) {
+    process.env.CLIENT_PASSKEY = process.env.LM_STUDIO_CLIENT_PASSKEY;
+  }
+
+  if (process.env.LM_STUDIO_CLIENT_IDENTIFIER && !process.env.CLIENT_IDENTIFIER) {
+    process.env.CLIENT_IDENTIFIER = process.env.LM_STUDIO_CLIENT_IDENTIFIER;
+  }
+
+  if (!process.env.CLIENT_IDENTIFIER) {
+    process.env.CLIENT_IDENTIFIER = "x-dev-open-mind";
+  }
+
+  if (process.env.BACKEND_HOST && !process.env.HOST) {
+    process.env.HOST = process.env.BACKEND_HOST;
+  }
+
+  if (process.env.BACKEND_PORT && !process.env.PORT) {
+    process.env.PORT = process.env.BACKEND_PORT;
+  }
 }
 
 function getUiHtml(): string {
@@ -1065,6 +1140,7 @@ export class LMStudioServer {
 export default LMStudioServer;
 
 if (require.main === module) {
+  loadRuntimeEnvironment();
   const port = Number(process.env.PORT ?? "3000");
   const host = process.env.HOST ?? "127.0.0.1";
   const apiUrl = process.env.LM_STUDIO_BASE_URL ?? process.env.LM_STUDIO_URL ?? "http://localhost:1234";

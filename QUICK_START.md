@@ -57,7 +57,7 @@ You should see:
 ```
 ============================================================================
   X-DEV Open Mind - Launcher
-  Running LM Studio backend tests and starting the UI
+  Running LM Studio backend tests, rebuilding, and starting the UI
 ============================================================================
 
 [1/3] Checking Node.js and npm...
@@ -67,15 +67,14 @@ You should see:
 [2/3] Checking dependencies...
 ✓ Dependencies ready
 
-[3/4] Running LM Studio test suite...
+[3/5] Running LM Studio test suite...
 ✓ LM Studio test suite passed
 
 ============================================================================
-UI launcher started
+OK - LM Studio backend rebuilt
 ============================================================================
 
-Browser UI:
-  Opens at http://localhost:3000
+[5/5] Starting the LM Studio UI server...
 
 To stop: Close the UI server window or press Ctrl+C
 

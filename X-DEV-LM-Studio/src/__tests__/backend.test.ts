@@ -1,5 +1,6 @@
 import path from "node:path";
 import { Readable } from "node:stream";
+import fs from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -16,6 +17,7 @@ import {
   serializeFileHandle,
   serializeMessage,
   toSerializableError,
+  loadRuntimeEnvironment,
 } from "../index";
 
 type MockMessage = {
@@ -271,6 +273,57 @@ describe("helper utilities", () => {
         code: "internal_error",
       },
     });
+  });
+
+  it("loads environment files and maps legacy LM Studio variables", () => {
+    const envKeys = [
+      "LM_STUDIO_API_URL",
+      "LM_STUDIO_API_TOKEN",
+      "LM_STUDIO_CLIENT_IDENTIFIER",
+      "LM_STUDIO_CLIENT_PASSKEY",
+      "LM_STUDIO_BASE_URL",
+      "LM_STUDIO_URL",
+      "CLIENT_PASSKEY",
+      "BACKEND_HOST",
+      "HOST",
+      "BACKEND_PORT",
+      "PORT",
+    ] as const;
+    const previousEnv = new Map(envKeys.map((key) => [key, process.env[key]]));
+    const existsSpy = vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    const readSpy = vi.spyOn(fs, "readFileSync").mockReturnValue(
+      [
+        "# sample env",
+        "LM_STUDIO_API_URL=http://example.com",
+        "LM_STUDIO_API_TOKEN=token-123",
+        "BACKEND_HOST=0.0.0.0",
+        "BACKEND_PORT=4321",
+      ].join("\n")
+    );
+
+    try {
+      for (const key of envKeys) {
+        delete process.env[key];
+      }
+
+      loadRuntimeEnvironment();
+
+      expect(process.env.LM_STUDIO_BASE_URL).toBe("http://example.com");
+      expect(process.env.CLIENT_PASSKEY).toBe("token-123");
+      expect(process.env.CLIENT_IDENTIFIER).toBe("x-dev-open-mind");
+      expect(process.env.HOST).toBe("0.0.0.0");
+      expect(process.env.PORT).toBe("4321");
+    } finally {
+      existsSpy.mockRestore();
+      readSpy.mockRestore();
+      for (const [key, value] of previousEnv.entries()) {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+    }
   });
 
   it("reads JSON request bodies and rejects oversized payloads", async () => {
