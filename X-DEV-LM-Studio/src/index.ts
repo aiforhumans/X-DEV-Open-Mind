@@ -260,6 +260,100 @@ function getUiHtml(): string {
         padding: 12px;
         min-height: 80px;
       }
+      .tabs {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 14px;
+        border-bottom: 1px solid var(--border);
+      }
+      .tab-button {
+        padding: 10px 14px;
+        background: transparent;
+        border: none;
+        border-bottom: 2px solid transparent;
+        color: var(--muted);
+        cursor: pointer;
+      }
+      .tab-button.active {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+      }
+      .tab-content {
+        display: none;
+      }
+      .tab-content.active {
+        display: block;
+      }
+      .slider-group {
+        margin-top: 12px;
+      }
+      .slider-label {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 4px;
+        font-size: 0.9rem;
+      }
+      input[type="range"] {
+        width: 100%;
+        padding: 0;
+      }
+      .model-status {
+        display: grid;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .model-item {
+        padding: 8px 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+      .model-item.loaded {
+        border-color: var(--ok);
+      }
+      .model-item.empty {
+        color: var(--muted);
+      }
+      .spinner {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        border: 2px solid var(--muted);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        vertical-align: -2px;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .toast-container {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        display: grid;
+        gap: 8px;
+        z-index: 1000;
+        pointer-events: none;
+      }
+      .toast {
+        pointer-events: auto;
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--text);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+      }
+      .toast.success {
+        border-color: var(--ok);
+      }
+      .toast.error {
+        border-color: var(--error);
+      }
     </style>
   </head>
   <body>
@@ -270,26 +364,75 @@ function getUiHtml(): string {
         <div id="health" class="status muted">Checking backend health...</div>
       </section>
 
-      <section class="panel">
-        <h1>Model</h1>
-        <div class="row">
-          <select id="modelSelect"></select>
-          <button id="refreshBtn">Refresh</button>
-          <button id="loadBtn" class="primary">Load selected</button>
-        </div>
-        <div id="modelStatus" class="status muted"></div>
-      </section>
+      <div class="tabs">
+        <button class="tab-button active" data-tab="settingsTab">Settings</button>
+        <button class="tab-button" data-tab="playgroundTab">Playground</button>
+      </div>
 
-      <section class="panel">
-        <h1>Prompt</h1>
-        <textarea id="promptInput" placeholder="Ask your local model..."></textarea>
-        <div class="actions" style="margin-top: 10px">
-          <button id="sendBtn" class="primary">Send</button>
-          <button id="clearBtn">Clear</button>
-        </div>
-        <div id="result" class="result" style="margin-top: 10px"></div>
-      </section>
+      <div id="settingsTab" class="tab-content active">
+        <section class="panel">
+          <h1>Model</h1>
+          <div class="row">
+            <select id="modelSelect"></select>
+            <button id="refreshBtn">Refresh</button>
+            <button id="loadBtn" class="primary">Load selected</button>
+          </div>
+          <div id="modelStatus" class="status muted"></div>
+        </section>
+
+        <section class="panel">
+          <h1>Prompt</h1>
+          <textarea id="promptInput" placeholder="Ask your local model..."></textarea>
+          <div class="actions" style="margin-top: 10px">
+            <button id="sendBtn" class="primary">Send</button>
+            <button id="clearBtn">Clear</button>
+          </div>
+          <div id="result" class="result" style="margin-top: 10px"></div>
+        </section>
+      </div>
+
+      <div id="playgroundTab" class="tab-content">
+        <section class="panel">
+          <h1>Model Status</h1>
+          <div class="model-status">
+            <div id="playgroundLlmStatus" class="model-item empty">LLM: None loaded</div>
+            <div id="playgroundEmbeddingStatus" class="model-item empty">Embedding: None loaded</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h1>Interactive Playground</h1>
+          <div class="row">
+            <select id="playgroundModelSelect"></select>
+            <button id="playgroundRefreshBtn">Refresh</button>
+            <button id="playgroundLoadBtn" class="primary">Load selected</button>
+          </div>
+          <textarea id="playgroundPrompt" placeholder="Enter a prompt to test the model..." style="margin-top: 12px"></textarea>
+          <div class="slider-group">
+            <div class="slider-label">
+              <span>Temperature</span>
+              <span id="temperatureValue">0.7</span>
+            </div>
+            <input id="temperature" type="range" min="0" max="2" step="0.1" value="0.7" />
+          </div>
+          <div class="slider-group">
+            <div class="slider-label">
+              <span>Max tokens</span>
+              <span id="maxTokensValue">512</span>
+            </div>
+            <input id="maxTokens" type="range" min="1" max="4096" step="1" value="512" />
+          </div>
+          <div class="actions" style="margin-top: 16px">
+            <button id="playgroundSendBtn" class="primary">Send</button>
+            <button id="playgroundCopyBtn">Copy</button>
+          </div>
+          <div id="playgroundResult" class="result" style="margin-top: 10px"></div>
+          <div id="playgroundStats" class="status muted"></div>
+        </section>
+      </div>
     </main>
+
+    <div id="toastContainer" class="toast-container"></div>
 
     <script>
       const healthEl = document.getElementById("health");
@@ -301,10 +444,48 @@ function getUiHtml(): string {
       const loadBtn = document.getElementById("loadBtn");
       const sendBtn = document.getElementById("sendBtn");
       const clearBtn = document.getElementById("clearBtn");
+      const playgroundModelSelect = document.getElementById("playgroundModelSelect");
+      const playgroundRefreshBtn = document.getElementById("playgroundRefreshBtn");
+      const playgroundLoadBtn = document.getElementById("playgroundLoadBtn");
+      const playgroundPrompt = document.getElementById("playgroundPrompt");
+      const playgroundSendBtn = document.getElementById("playgroundSendBtn");
+      const playgroundCopyBtn = document.getElementById("playgroundCopyBtn");
+      const playgroundResult = document.getElementById("playgroundResult");
+      const playgroundStats = document.getElementById("playgroundStats");
+      const playgroundLlmStatus = document.getElementById("playgroundLlmStatus");
+      const playgroundEmbeddingStatus = document.getElementById("playgroundEmbeddingStatus");
+      const temperatureInput = document.getElementById("temperature");
+      const maxTokensInput = document.getElementById("maxTokens");
+      const temperatureValue = document.getElementById("temperatureValue");
+      const maxTokensValue = document.getElementById("maxTokensValue");
+      const toastContainer = document.getElementById("toastContainer");
 
       function setStatus(el, text, type) {
         el.textContent = text;
         el.className = "status " + (type || "muted");
+      }
+
+      function showToast(message, type) {
+        const toast = document.createElement("div");
+        toast.className = "toast " + (type || "muted");
+        toast.textContent = message;
+        toastContainer.appendChild(toast);
+        window.setTimeout(function () {
+          toast.remove();
+        }, 3000);
+      }
+
+      function setBusy(button, busy, label) {
+        if (busy) {
+          button.dataset.label = button.textContent;
+          button.disabled = true;
+          button.innerHTML = '<span class="spinner"></span> ' + label;
+          return;
+        }
+        button.disabled = false;
+        if (button.dataset.label) {
+          button.textContent = button.dataset.label;
+        }
       }
 
       function pickModelKey(model) {
@@ -336,6 +517,43 @@ function getUiHtml(): string {
         return payload;
       }
 
+      function extractStatsText(stats) {
+        if (!stats || typeof stats !== "object") {
+          return "";
+        }
+
+        const parts = [];
+        if (typeof stats.inputTokens === "number") parts.push("input: " + stats.inputTokens);
+        if (typeof stats.outputTokens === "number") parts.push("output: " + stats.outputTokens);
+        if (typeof stats.completionTokens === "number") parts.push("completion: " + stats.completionTokens);
+        if (typeof stats.totalTokens === "number") parts.push("total: " + stats.totalTokens);
+        return parts.join(" | ");
+      }
+
+      function populateModelSelects(models, loadedKey) {
+        const selects = [modelSelect, playgroundModelSelect];
+        for (const select of selects) {
+          select.innerHTML = "";
+          for (const model of models) {
+            const key = pickModelKey(model);
+            if (!key) continue;
+            const option = document.createElement("option");
+            option.value = key;
+            option.textContent = key;
+            option.selected = key === loadedKey;
+            select.append(option);
+          }
+
+          if (!select.value && loadedKey) {
+            const fallback = document.createElement("option");
+            fallback.value = loadedKey;
+            fallback.textContent = loadedKey;
+            fallback.selected = true;
+            select.append(fallback);
+          }
+        }
+      }
+
       async function refreshModels() {
         setStatus(modelStatus, "Loading model list...", "muted");
         try {
@@ -348,24 +566,7 @@ function getUiHtml(): string {
           const loadedModels = Array.isArray(loaded.data) ? loaded.data : [];
           const loadedKey = pickModelKey(loadedModels[0]) || "";
 
-          modelSelect.innerHTML = "";
-          for (const model of models) {
-            const key = pickModelKey(model);
-            if (!key) continue;
-            const option = document.createElement("option");
-            option.value = key;
-            option.textContent = key;
-            option.selected = key === loadedKey;
-            modelSelect.append(option);
-          }
-
-          if (!modelSelect.value && loadedKey) {
-            const option = document.createElement("option");
-            option.value = loadedKey;
-            option.textContent = loadedKey;
-            option.selected = true;
-            modelSelect.append(option);
-          }
+          populateModelSelects(models, loadedKey);
 
           if (modelSelect.options.length === 0) {
             setStatus(modelStatus, "No downloaded models found in LM Studio.", "error");
@@ -382,13 +583,35 @@ function getUiHtml(): string {
         }
       }
 
+      async function refreshPlaygroundStatus() {
+        try {
+          const [llmLoaded, embeddingLoaded] = await Promise.all([
+            requestJson("/v1/models/loaded?domain=llm"),
+            requestJson("/v1/models/loaded?domain=embedding"),
+          ]);
+
+          const llm = Array.isArray(llmLoaded.data) && llmLoaded.data.length > 0 ? pickModelKey(llmLoaded.data[0]) : "";
+          const embedding = Array.isArray(embeddingLoaded.data) && embeddingLoaded.data.length > 0 ? pickModelKey(embeddingLoaded.data[0]) : "";
+
+          playgroundLlmStatus.textContent = llm ? "LLM: " + llm : "LLM: None loaded";
+          playgroundLlmStatus.className = "model-item " + (llm ? "loaded" : "empty");
+          playgroundEmbeddingStatus.textContent = embedding ? "Embedding: " + embedding : "Embedding: None loaded";
+          playgroundEmbeddingStatus.className = "model-item " + (embedding ? "loaded" : "empty");
+        } catch {
+          playgroundLlmStatus.textContent = "LLM: unavailable";
+          playgroundEmbeddingStatus.textContent = "Embedding: unavailable";
+        }
+      }
+
       async function loadSelectedModel() {
         const model = modelSelect.value;
         if (!model) {
           setStatus(modelStatus, "Select a model first.", "error");
+          showToast("Select a model first.", "error");
           return;
         }
         setStatus(modelStatus, "Loading " + model + "...", "muted");
+        setBusy(loadBtn, true, "Loading");
         try {
           await requestJson("/v1/models/load", {
             method: "POST",
@@ -396,8 +619,13 @@ function getUiHtml(): string {
             body: JSON.stringify({ name: model, domain: "llm" }),
           });
           setStatus(modelStatus, "Loaded model: " + model, "ok");
+          showToast("Loaded model: " + model, "success");
+          await refreshPlaygroundStatus();
         } catch (error) {
           setStatus(modelStatus, error.message, "error");
+          showToast(error.message, "error");
+        } finally {
+          setBusy(loadBtn, false);
         }
       }
 
@@ -405,10 +633,11 @@ function getUiHtml(): string {
         const prompt = promptInput.value.trim();
         if (!prompt) {
           resultEl.textContent = "Type a prompt first.";
+          showToast("Type a prompt first.", "error");
           return;
         }
         resultEl.textContent = "Generating...";
-        sendBtn.disabled = true;
+        setBusy(sendBtn, true, "Sending");
         try {
           const payload = await requestJson("/v1/chat/completions", {
             method: "POST",
@@ -419,11 +648,99 @@ function getUiHtml(): string {
             }),
           });
           resultEl.textContent = payload.content || JSON.stringify(payload, null, 2);
+          showToast("Response received.", "success");
         } catch (error) {
           resultEl.textContent = "Error: " + error.message;
+          showToast(error.message, "error");
         } finally {
-          sendBtn.disabled = false;
+          setBusy(sendBtn, false);
         }
+      }
+
+      async function loadPlaygroundModel() {
+        const model = playgroundModelSelect.value;
+        if (!model) {
+          showToast("Select a model first.", "error");
+          return;
+        }
+
+        setBusy(playgroundLoadBtn, true, "Loading");
+        try {
+          await requestJson("/v1/models/load", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: model, domain: "llm" }),
+          });
+          showToast("Loaded model: " + model, "success");
+          await refreshModels();
+          await refreshPlaygroundStatus();
+        } catch (error) {
+          showToast(error.message, "error");
+        } finally {
+          setBusy(playgroundLoadBtn, false);
+        }
+      }
+
+      async function sendPlaygroundPrompt() {
+        const prompt = playgroundPrompt.value.trim();
+        if (!prompt) {
+          showToast("Enter a prompt first.", "error");
+          return;
+        }
+
+        const temperature = Number(temperatureInput.value);
+        const maxTokens = Number(maxTokensInput.value);
+
+        playgroundResult.innerHTML = '<span class="spinner"></span> Generating...';
+        playgroundStats.textContent = "";
+        setBusy(playgroundSendBtn, true, "Sending");
+
+        try {
+          const payload = await requestJson("/v1/completions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              prompt: prompt,
+              model: playgroundModelSelect.value || undefined,
+              options: {
+                temperature: temperature,
+                maxTokens: maxTokens,
+              },
+            }),
+          });
+
+          playgroundResult.textContent = payload.content || JSON.stringify(payload, null, 2);
+          playgroundStats.textContent = extractStatsText(payload.stats);
+          showToast("Playground response received.", "success");
+        } catch (error) {
+          playgroundResult.textContent = "Error: " + error.message;
+          showToast(error.message, "error");
+        } finally {
+          setBusy(playgroundSendBtn, false);
+        }
+      }
+
+      async function copyPlaygroundResult() {
+        const text = playgroundResult.textContent.trim();
+        if (!text) {
+          showToast("Nothing to copy.", "error");
+          return;
+        }
+
+        try {
+          await navigator.clipboard.writeText(text);
+          showToast("Copied to clipboard.", "success");
+        } catch {
+          showToast("Copy failed.", "error");
+        }
+      }
+
+      function updateTemperatureValue() {
+        temperatureValue.textContent = temperatureInput.value;
+      }
+
+      function updateMaxTokensValue() {
+        maxTokensValue.textContent = maxTokensInput.value;
       }
 
       async function init() {
@@ -434,7 +751,25 @@ function getUiHtml(): string {
           setStatus(healthEl, "Health check failed: " + error.message, "error");
         }
         await refreshModels();
+        await refreshPlaygroundStatus();
       }
+
+      document.querySelectorAll(".tab-button").forEach(function (button) {
+        button.addEventListener("click", function () {
+          const tabId = button.getAttribute("data-tab");
+          document.querySelectorAll(".tab-button").forEach(function (other) {
+            other.classList.remove("active");
+          });
+          document.querySelectorAll(".tab-content").forEach(function (tab) {
+            tab.classList.remove("active");
+          });
+          button.classList.add("active");
+          document.getElementById(tabId).classList.add("active");
+          if (tabId === "playgroundTab") {
+            void refreshPlaygroundStatus();
+          }
+        });
+      });
 
       refreshBtn.addEventListener("click", refreshModels);
       loadBtn.addEventListener("click", loadSelectedModel);
@@ -443,7 +778,27 @@ function getUiHtml(): string {
         promptInput.value = "";
         resultEl.textContent = "";
       });
+      playgroundRefreshBtn.addEventListener("click", function () {
+        void refreshModels();
+        void refreshPlaygroundStatus();
+      });
+      playgroundLoadBtn.addEventListener("click", function () {
+        void loadPlaygroundModel();
+      });
+      playgroundSendBtn.addEventListener("click", function () {
+        void sendPlaygroundPrompt();
+      });
+      playgroundCopyBtn.addEventListener("click", function () {
+        void copyPlaygroundResult();
+      });
+      temperatureInput.addEventListener("input", updateTemperatureValue);
+      maxTokensInput.addEventListener("input", updateMaxTokensValue);
       void init();
+      void updateTemperatureValue();
+      void updateMaxTokensValue();
+      window.setInterval(function () {
+        void refreshPlaygroundStatus();
+      }, 5000);
     </script>
   </body>
 </html>`;

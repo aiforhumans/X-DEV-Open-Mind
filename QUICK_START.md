@@ -113,7 +113,7 @@ If you see auth errors, see [AUTHENTICATION_FIX.md](./AUTHENTICATION_FIX.md) fir
 Then verify:
 
 1. **Backend Server:** Visit http://localhost:3000 in your browser
-   - Should show UI with Model dropdown and Playground
+   - Should show the tabbed UI with Settings + Playground
    - Click "Test Backend Connection" - should show success toast
    - Verify model status displays
    - Try Playground tab to test prompts
@@ -129,6 +129,8 @@ Then verify:
    - Type "Ask LM Studio"
    - Type a prompt and hit Enter
    - You should get a response from your LM Studio model
+
+4. **If the page looks old:** clear browser cache and restart `start.bat`
 
 ---
 

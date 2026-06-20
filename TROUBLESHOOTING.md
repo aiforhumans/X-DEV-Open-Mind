@@ -122,6 +122,8 @@ start.bat
 - The backend server needs **LM Studio** running separately
 - Download from https://lmstudio.ai/ and start it first
 - Then run `start.bat`
+- If you still see the old UI in the browser, refresh with Ctrl+F5 after restart
+- The UI at http://localhost:3000 is served by the backend, so a stale browser cache can make it look unchanged
 
 **Cause #3 - Build not complete**
 ```batch
@@ -144,6 +146,7 @@ start.bat
 2. Visit http://localhost:1234 in your browser
 3. You should see the LM Studio interface
 4. If not, start LM Studio
+5. If the backend logs show connection refused on port 1234, confirm LM Studio's local server is enabled and listening on `http://localhost:1234`
 
 ### Solution #2 - Check Plugin Configuration
 1. Open **Obsidian Settings**

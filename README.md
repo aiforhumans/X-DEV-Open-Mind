@@ -1,6 +1,6 @@
 # X-DEV Open Mind: Local LLM Development Platform
 
-**Status:** Production-ready backend + Obsidian plugin. React settings UI is prototype/example code.
+**Status:** Production-ready backend + Obsidian plugin. The backend now serves a tabbed built-in HTML UI with a Playground.
 
 A complete development platform for building local LLM applications using LM Studio and Obsidian integration.
 
@@ -111,20 +111,21 @@ See **[QUICK_START.md](./QUICK_START.md)** for detailed setup instructions and s
 
 ### X-DEV-LM-Studio Backend
 
-**Production-ready HTTP server** wrapping LM Studio SDK with modern React UI.
+**Production-ready HTTP server** wrapping LM Studio SDK with a built-in tabbed HTML UI.
 
 **Features:**
 - 🎮 Interactive Playground for testing models
 - 📊 Live model status display (updates every 5 seconds)
 - 🔔 Toast notifications for user feedback
 - ⚡ Loading spinners on all operations
+- 🧭 Settings and Playground tabs served at `/`
 - Health checks and model management
 - Text completion and chat endpoints
 - Embedding model support
 - Tool-calling (agent) execution
 - Server-sent event streaming
 - File preparation and document parsing
-- Built-in HTML UI at `/`
+- Built-in HTML UI at `/` with Playground tab
 
 **Build Status:** ✅ Compiles cleanly
 - Only backend files included (React UI excluded)
