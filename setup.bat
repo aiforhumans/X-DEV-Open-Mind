@@ -49,7 +49,7 @@ echo OK - Build complete
 echo.
 echo ============================================================================
 echo SETUP COMPLETE!
-echo Next: Run start.bat or npm test to run the LM Studio test suite
+echo Next: Run start.bat to launch the LM Studio browser UI, or npm test for tests only
 echo ============================================================================
 echo.
 pause

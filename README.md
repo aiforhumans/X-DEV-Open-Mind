@@ -33,7 +33,7 @@ X-DEV-Open-Mind/
 │   ├── FINDINGS.md              # Implementation issues & recommendations
 │   └── BUILD_AND_TEST_REPORT.md # Verification status & build results
 │
-├── start.bat                    # 🚀 MAIN LAUNCHER (runs LM Studio tests)
+├── start.bat                    # 🚀 MAIN LAUNCHER (tests, then opens the UI)
 ├── setup.bat                    # Install dependencies & build
 ├── stop-all.bat                 # Stop all running processes
 ├── clean-build.bat              # Full clean rebuild
@@ -43,7 +43,7 @@ X-DEV-Open-Mind/
 └── README.md                    # This file
 ```
 
-**Windows Users: Run `start.bat` for tests, or `npm start` for the server.**
+**Windows Users: Run `start.bat` to test and open the UI, or `npm start` for the server.**
 
 ## 🚀 Quick Start (Windows)
 
@@ -74,7 +74,7 @@ This installs dependencies and builds everything.
 start.bat
 ```
 
-This runs the LM Studio backend test suite automatically.
+This runs the LM Studio backend test suite, then starts the browser UI.
 
 ✨ That's it! The console will stay open showing test output.
 

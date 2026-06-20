@@ -46,7 +46,7 @@ This will:
 
 > Takes 2-5 minutes on first run
 
-### 3️⃣ Run the Test Launcher
+### 3️⃣ Run the Launcher
 
 **Windows Only:**
 ```batch
@@ -56,8 +56,8 @@ start.bat
 You should see:
 ```
 ============================================================================
-  X-DEV Open Mind - Test Launcher
-  Running LM Studio backend tests
+  X-DEV Open Mind - Launcher
+  Running LM Studio backend tests and starting the UI
 ============================================================================
 
 [1/3] Checking Node.js and npm...
@@ -67,17 +67,17 @@ You should see:
 [2/3] Checking dependencies...
 ✓ Dependencies ready
 
-[3/3] Running LM Studio test suite...
+[3/4] Running LM Studio test suite...
 ✓ LM Studio test suite passed
 
 ============================================================================
-Test run complete
+UI launcher started
 ============================================================================
 
-Test output:
-  Shown directly in the console
+Browser UI:
+  Opens at http://localhost:3000
 
-To stop: Close this window or press Ctrl+C
+To stop: Close the UI server window or press Ctrl+C
 
 ============================================================================
 ```
@@ -127,7 +127,7 @@ Then verify:
 
 | File | What It Does |
 |------|-------------|
-| `start.bat` | Runs the LM Studio backend test suite |
+| `start.bat` | Runs tests, then opens the LM Studio browser UI |
 | `setup.bat` | Install dependencies and build projects (run once) |
 | `stop-all.bat` | Kill all running processes (Node.js, Obsidian) |
 | `clean-build.bat` | Full clean rebuild (if something breaks) |
@@ -148,7 +148,7 @@ Then verify:
 4. Click Finish
 5. Right-click the shortcut → **Properties → Advanced** → Check **Run as administrator** (optional)
 
-Now double-click to run the test launcher!
+Now double-click to launch the UI!
 
 ---
 
@@ -157,8 +157,8 @@ Now double-click to run the test launcher!
 After you run `start.bat`:
 
 - Runs the LM Studio backend test suite
-- Leaves the console open so you can read the output
-- Does not start the backend server or the Obsidian plugin
+- Starts the backend server in a separate window
+- Opens the browser UI at http://localhost:3000
 
 ---
 

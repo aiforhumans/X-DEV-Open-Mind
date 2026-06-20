@@ -1,7 +1,7 @@
 @echo off
 REM ============================================================================
-REM X-DEV Open Mind - LM Studio Test Launcher
-REM Runs the LM Studio backend test suite in a single command
+REM X-DEV Open Mind - LM Studio Launcher
+REM Runs the LM Studio backend test suite, then starts the UI server
 REM ============================================================================
 
 setlocal enabledelayedexpansion
@@ -10,8 +10,8 @@ set "TEST_EXIT_CODE=0"
 
 echo.
 echo ============================================================================
-echo  X-DEV Open Mind - Test Launcher
-echo  Running LM Studio backend tests
+echo  X-DEV Open Mind - Launcher
+echo  Running LM Studio backend tests and starting the UI
 echo ============================================================================
 echo.
 
@@ -72,7 +72,7 @@ echo.
 REM ============================================================================
 REM STEP 3: Run LM Studio test suite
 REM ============================================================================
-echo [3/3] Running LM Studio test suite...
+echo [3/4] Running LM Studio test suite...
 echo.
 
 call npm test
@@ -85,9 +85,28 @@ if %TEST_EXIT_CODE% NEQ 0 (
     echo OK - LM Studio test suite passed
 )
 
+if %TEST_EXIT_CODE% NEQ 0 (
+    echo.
+    echo ============================================================================
+    echo Test run complete
+    echo ============================================================================
+    echo.
+    pause
+    exit /b %TEST_EXIT_CODE%
+)
+
+echo.
+echo [4/4] Starting the LM Studio UI server...
+echo This will open the browser UI at http://localhost:3000
+echo.
+
+start "X-DEV LM Studio Server" cmd /k "cd /d %~dp0 && npm start -w X-DEV-LM-Studio"
+timeout /t 3 >nul
+start "" "http://localhost:3000"
+
 echo.
 echo ============================================================================
-echo Test run complete
+echo UI launcher started
 echo ============================================================================
 echo.
 pause
