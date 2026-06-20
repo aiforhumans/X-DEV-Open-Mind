@@ -1355,9 +1355,16 @@ if (require.main === module) {
   const port = Number(process.env.PORT ?? "3000");
   const host = process.env.HOST ?? "127.0.0.1";
   const apiUrl = process.env.LM_STUDIO_BASE_URL ?? process.env.LM_STUDIO_URL ?? "http://localhost:1234";
+  const clientIdentifier = process.env.CLIENT_IDENTIFIER;
+  const clientPasskey = process.env.CLIENT_PASSKEY;
 
-  const server = new LMStudioServer(apiUrl);
+  const server = new LMStudioServer(apiUrl, {
+    clientIdentifier,
+    clientPasskey,
+    verboseErrorMessages: process.env.VERBOSE_ERRORS === "true",
+  });
   void server.start(port, host).then(() => {
     console.log(`LM Studio backend listening on http://${host}:${port}`);
+    console.log(`Connecting to LM Studio at ${apiUrl}`);
   });
 }

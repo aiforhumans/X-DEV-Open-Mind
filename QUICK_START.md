@@ -1,5 +1,13 @@
 # X-DEV Open Mind - Quick Start Guide
 
+## ⚠️ Authentication Error?
+
+If you see: **"Failed to authenticate: The LM Studio API token provided was not recognized"**
+
+👉 See **[AUTHENTICATION_FIX.md](./AUTHENTICATION_FIX.md)** (2-minute fix!)
+
+---
+
 ## Installation & Launch (Windows)
 
 ### Prerequisites
@@ -98,11 +106,25 @@ To stop: Close this window or press Ctrl+C
 
 ### 5️⃣ Verify Everything Works
 
-1. **Backend Server:** Visit http://localhost:3000 in your browser
-   - Should show a simple HTML interface
-   - Try the `/health` endpoint - should return `{"status": "ok"}`
+**⚠️ First: Check LM Studio Authentication!**
 
-2. **Obsidian Plugin:**
+If you see auth errors, see [AUTHENTICATION_FIX.md](./AUTHENTICATION_FIX.md) first (takes 2 minutes).
+
+Then verify:
+
+1. **Backend Server:** Visit http://localhost:3000 in your browser
+   - Should show UI with Model dropdown and Playground
+   - Click "Test Backend Connection" - should show success toast
+   - Verify model status displays
+   - Try Playground tab to test prompts
+
+2. **API Health Check:**
+   ```bash
+   curl http://localhost:3000/health
+   # Returns: {"ok":true,"baseUrl":"ws://localhost:1234"}
+   ```
+
+3. **Obsidian Plugin:**
    - Use command palette: `Cmd/Ctrl + P`
    - Type "Ask LM Studio"
    - Type a prompt and hit Enter

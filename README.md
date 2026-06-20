@@ -47,6 +47,12 @@ X-DEV-Open-Mind/
 
 ## 🚀 Quick Start (Windows)
 
+### ⚠️ Authentication Issue?
+
+If you see: **"Failed to authenticate: The LM Studio API token provided was not recognized"**
+
+👉 See **[AUTHENTICATION_FIX.md](./AUTHENTICATION_FIX.md)** for the 2-minute solution
+
 ### Prerequisites
 
 - **Windows 10/11**
@@ -105,9 +111,13 @@ See **[QUICK_START.md](./QUICK_START.md)** for detailed setup instructions and s
 
 ### X-DEV-LM-Studio Backend
 
-**Production-ready HTTP server** wrapping LM Studio SDK.
+**Production-ready HTTP server** wrapping LM Studio SDK with modern React UI.
 
 **Features:**
+- 🎮 Interactive Playground for testing models
+- 📊 Live model status display (updates every 5 seconds)
+- 🔔 Toast notifications for user feedback
+- ⚡ Loading spinners on all operations
 - Health checks and model management
 - Text completion and chat endpoints
 - Embedding model support
@@ -229,13 +239,13 @@ See [X-DEV-LM-Studio/TESTING.md](./X-DEV-LM-Studio/TESTING.md) for testing guide
 
 ## 📖 Documentation
 
-### Architecture Documentation (DOC/ folder)
+### Getting Started & Troubleshooting
 
-- **[README.md](./DOC/README.md)** - Overview of all docs
-- **[ARCHITECTURE.md](./DOC/ARCHITECTURE.md)** - System design, runtime flow, integration
-- **[LOGIC_AND_FUNCTIONS.md](./DOC/LOGIC_AND_FUNCTIONS.md)** - Function-by-function analysis
-- **[FINDINGS.md](./DOC/FINDINGS.md)** - Issues, risks, recommendations
-- **[BUILD_AND_TEST_REPORT.md](./DOC/BUILD_AND_TEST_REPORT.md)** - Verification results
+- **[AUTHENTICATION_FIX.md](./AUTHENTICATION_FIX.md)** - ⚠️ Fix auth errors (2-minute solution!)
+- **[QUICK_START.md](./QUICK_START.md)** - User-friendly setup guide
+- **[TROUBLESHOOTING.md](./TROUBLESHOOTING.md)** - Common issues & fixes
+- **[FIX_LM_STUDIO_AUTH.md](./FIX_LM_STUDIO_AUTH.md)** - Quick reference guide
+- **[LM_STUDIO_AUTH_GUIDE.md](./LM_STUDIO_AUTH_GUIDE.md)** - Detailed auth documentation
 
 ### Project-Specific Docs
 
@@ -268,12 +278,13 @@ See [X-DEV-LM-Studio/TESTING.md](./X-DEV-LM-Studio/TESTING.md) for testing guide
 
 ## 🎯 Roadmap
 
-### Phase 2: UX Improvements (Pending)
+### Phase 2: UX Improvements (✅ Complete)
 
-- Improve Obsidian answer output (insert/replace/modal)
-- Add URL validation to Obsidian settings
-- Clarify autoConnect behavior
-- Fix current model tracking drift
+- ✅ Interactive Playground for model testing
+- ✅ Live model status display
+- ✅ Toast notifications for feedback
+- ✅ Loading spinners on operations
+- ✅ Authentication fix documentation
 
 ### Phase 3: Testing & Docs (In Progress)
 
