@@ -5,6 +5,11 @@
 
 import { LMStudioClient } from "@lmstudio/sdk";
 
+// Helper: Convert host/port to websocket base URL (matching backend normalization)
+function normalizeBaseUrl(host: string, port: number): string {
+  return `ws://${host}:${port}`;
+}
+
 // Type definitions matching the Settings UI
 export interface ExportedSettings {
   model: {
@@ -12,9 +17,9 @@ export interface ExportedSettings {
     domain?: "llm" | "embedding";
     path?: string;
     contextLength?: number;
-    gpuOffload?: number;
-    keepModelInMemory?: boolean;
-    tryMmap?: boolean;
+    gpuRatio?: number;
+    keepInMemory?: boolean;
+    mmap?: boolean;
   };
   inference: {
     temperature?: number;
@@ -34,19 +39,25 @@ export interface ExportedSettings {
  * Example 1: Load Model with Settings
  */
 export async function loadModelWithSettings(settings: ExportedSettings) {
-  const client = new LMStudioClient({
-    host: settings.backend.host,
-    port: settings.backend.port,
-  });
+  const baseUrl = normalizeBaseUrl(settings.backend.host, settings.backend.port);
+  const client = new LMStudioClient({ baseUrl });
 
   // Load the model with configured settings
-  const model = await client.llm.load(settings.model.name, {
-    contextLength: settings.model.contextLength,
-    gpuOffload: settings.model.gpuOffload,
-    keepModelInMemory: settings.model.keepModelInMemory,
-    tryMmap: settings.model.tryMmap,
-  });
+  const modelKey = settings.model.path || settings.model.name;
+  const domain = settings.model.domain || "llm";
+  const namespace = domain === "llm" ? client.llm : client.embedding;
 
+  const loadOptions: Record<string, unknown> = {};
+  if (settings.model.contextLength !== undefined)
+    loadOptions.contextLength = settings.model.contextLength;
+  if (settings.model.keepInMemory !== undefined)
+    loadOptions.keepInMemory = settings.model.keepInMemory;
+  if (settings.model.mmap !== undefined)
+    loadOptions.mmap = settings.model.mmap;
+  if (domain === "llm" && settings.model.gpuRatio !== undefined)
+    loadOptions.gpuRatio = settings.model.gpuRatio;
+
+  const model = await namespace.load(modelKey, loadOptions);
   return model;
 }
 
@@ -58,13 +69,17 @@ export async function generateWithSettings(
   prompt: string,
   settings: ExportedSettings
 ) {
-  const response = await model.predict(prompt, {
-    temperature: settings.inference.temperature,
-    topP: settings.inference.topP,
-    topK: settings.inference.topK,
-    maxTokens: settings.inference.maxTokens,
-  });
+  const predictionOptions: Record<string, unknown> = {};
+  if (settings.inference.temperature !== undefined)
+    predictionOptions.temperature = settings.inference.temperature;
+  if (settings.inference.topP !== undefined)
+    predictionOptions.topPSampling = settings.inference.topP;
+  if (settings.inference.topK !== undefined)
+    predictionOptions.topKSampling = settings.inference.topK;
+  if (settings.inference.maxTokens !== undefined)
+    predictionOptions.maxTokens = settings.inference.maxTokens;
 
+  const response = await model.complete(prompt, predictionOptions);
   return response;
 }
 
@@ -76,13 +91,17 @@ export async function chatWithSettings(
   messages: { role: string; content: string }[],
   settings: ExportedSettings
 ) {
-  const response = await model.respond(messages, {
-    temperature: settings.inference.temperature,
-    topP: settings.inference.topP,
-    topK: settings.inference.topK,
-    maxTokens: settings.inference.maxTokens,
-  });
+  const predictionOptions: Record<string, unknown> = {};
+  if (settings.inference.temperature !== undefined)
+    predictionOptions.temperature = settings.inference.temperature;
+  if (settings.inference.topP !== undefined)
+    predictionOptions.topPSampling = settings.inference.topP;
+  if (settings.inference.topK !== undefined)
+    predictionOptions.topKSampling = settings.inference.topK;
+  if (settings.inference.maxTokens !== undefined)
+    predictionOptions.maxTokens = settings.inference.maxTokens;
 
+  const response = await model.respond(messages, predictionOptions);
   return response;
 }
 
@@ -93,15 +112,20 @@ export async function createEmbeddingsWithSettings(
   settings: ExportedSettings,
   texts: string[]
 ) {
-  const client = new LMStudioClient({
-    host: settings.backend.host,
-    port: settings.backend.port,
-  });
+  const baseUrl = normalizeBaseUrl(settings.backend.host, settings.backend.port);
+  const client = new LMStudioClient({ baseUrl });
 
   // Load embedding model
-  const model = await client.embedding.load(settings.model.name, {
-    contextLength: settings.model.contextLength,
-  });
+  const modelKey = settings.model.path || settings.model.name;
+  const loadOptions: Record<string, unknown> = {};
+  if (settings.model.contextLength !== undefined)
+    loadOptions.contextLength = settings.model.contextLength;
+  if (settings.model.keepInMemory !== undefined)
+    loadOptions.keepInMemory = settings.model.keepInMemory;
+  if (settings.model.mmap !== undefined)
+    loadOptions.mmap = settings.model.mmap;
+
+  const model = await client.embedding.load(modelKey, loadOptions);
 
   // Create embeddings
   const embeddings = await Promise.all(texts.map((text) => model.embed(text)));
@@ -164,9 +188,9 @@ export function createDefaultSettings(
       name: "default-model",
       domain: "llm",
       contextLength: 2048,
-      gpuOffload: 100,
-      keepModelInMemory: true,
-      tryMmap: true,
+      gpuRatio: 100,
+      keepInMemory: true,
+      mmap: true,
     },
     inference: {
       temperature: 0.7,
@@ -222,7 +246,7 @@ export async function completeWorkflow() {
     model: {
       name: "model-identifier",
       contextLength: 4096,
-      gpuOffload: 100,
+      gpuRatio: 100,
     },
   });
 

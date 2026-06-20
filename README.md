@@ -1,171 +1,280 @@
-# Local-Mind: Local LLM Development Platform
+# X-DEV Open Mind: Local LLM Development Platform
+
+**Status:** Production-ready backend + Obsidian plugin. React settings UI is prototype/example code.
 
 A complete development platform for building local LLM applications using LM Studio and Obsidian integration.
 
 ## 📁 Project Structure
 
 ```
-Local-Mind/
-├── X-DEV-LM-Studio/        # Local LLM server & agent framework
-│   ├── src/                # TypeScript source code
-│   ├── dist/               # Compiled JavaScript
-│   ├── package.json        # Dependencies & scripts
-│   └── README.md           # Project-specific documentation
+X-DEV-Open-Mind/
+├── X-DEV-LM-Studio/             # Local LLM HTTP server
+│   ├── src/
+│   │   ├── index.ts             # Main HTTP backend (40KB)
+│   │   ├── settingsIntegration.ts  # Settings examples (10KB)
+│   │   └── __tests__/           # Unit tests for validators
+│   ├── examples/
+│   │   └── settings-ui-react/   # React UI prototype (not in build)
+│   ├── dist/                    # Compiled JavaScript (production)
+│   ├── README.md                # Backend documentation
+│   ├── TESTING.md               # Testing guide
+│   └── package.json
 │
-├── X-DEV-Obsidian/         # Obsidian plugin for LLM integration
-│   ├── src/                # Plugin source code
-│   ├── main.js             # Built plugin bundle
-│   ├── manifest.json       # Obsidian plugin manifest
-│   ├── package.json        # Dependencies & scripts
-│   └── README.md           # Plugin documentation
+├── X-DEV-Obsidian/              # Obsidian plugin for LLM integration
+│   ├── src/main.ts              # Plugin source code
+│   ├── manifest.json            # Obsidian plugin manifest
+│   ├── main.js                  # Built plugin bundle (production)
+│   └── package.json
 │
-└── Obsidian/               # Obsidian vault (if present)
+├── DOC/                         # Architecture & findings documentation
+│   ├── README.md                # Overview of documentation
+│   ├── ARCHITECTURE.md          # System design & data flow
+│   ├── LOGIC_AND_FUNCTIONS.md   # Detailed function analysis
+│   ├── FINDINGS.md              # Implementation issues & recommendations
+│   └── BUILD_AND_TEST_REPORT.md # Verification status & build results
+│
+└── package.json (root)          # Workspace scripts
 ```
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 
-- Node.js 20+ installed
-- npm 8+
-- LM Studio running locally (http://localhost:1234)
-- Obsidian (for plugin usage)
+- **Node.js 20+** and **npm 8+**
+- **LM Studio** running locally at `http://localhost:1234`
+- **Obsidian** (for plugin usage)
 
-### Setup
+### Installation
 
-1. **Install dependencies for LM Studio server:**
-   ```bash
-   cd X-DEV-LM-Studio
-   npm install
-   npm run build
-   ```
+```bash
+# Install all dependencies
+npm install
 
-2. **Install dependencies for Obsidian plugin:**
-   ```bash
-   cd X-DEV-Obsidian
-   npm install
-   npm run build
-   ```
+# Build both projects
+npm run build:all
+
+# Or build individually
+npm run build:lm        # LM Studio backend
+npm run build:obsidian  # Obsidian plugin
+```
+
+### Verify Build Success
+
+```bash
+npm run build:all
+
+# Expected: Both projects compile with 0 errors
+# X-DEV-LM-Studio: ✅ index.js + settingsIntegration.js
+# X-DEV-Obsidian: ✅ main.js (1009 KB)
+```
 
 ## 📦 Components
 
-### X-DEV-LM-Studio
-Local LLM server and framework for TypeScript applications.
+### X-DEV-LM-Studio Backend
+
+**Production-ready HTTP server** wrapping LM Studio SDK.
 
 **Features:**
-- Model loading and management
-- Text inference with configurable parameters
-- Full TypeScript support
-- Compatible with LM Studio SDK
+- Health checks and model management
+- Text completion and chat endpoints
+- Embedding model support
+- Tool-calling (agent) execution
+- Server-sent event streaming
+- File preparation and document parsing
+- Built-in HTML UI at `/`
 
-**Commands:**
+**Build Status:** ✅ Compiles cleanly
+- Only backend files included (React UI excluded)
+- Separate TypeScript config: `tsconfig.backend.json`
+- No React/DOM dependencies required
+
+**Key Files:**
+- `src/index.ts` (42 KB) - Main backend
+- `src/settingsIntegration.ts` (10 KB) - Settings helpers
+- `src/__tests__/backend.test.ts` - Validator tests
+
+**Usage:**
+
 ```bash
-npm run build      # Compile TypeScript to JavaScript
-npm run dev        # Watch mode for development
-npm start          # Run the server
+# Build
+npm run build -w X-DEV-LM-Studio
+
+# Run
+npm start -w X-DEV-LM-Studio
+# Server listens on http://localhost:3000
+
+# Try it
+curl http://localhost:3000/health
+curl http://localhost:3000/v1/models
 ```
 
-**Usage Example:**
-```typescript
-import LMStudioServer from "./src/index";
+**API Routes:**
+- `GET /health` - Server status
+- `GET /v1/models` - List downloaded models
+- `POST /v1/models/load` - Load a model
+- `POST /v1/chat/completions` - Chat inference
+- `POST /v1/embeddings` - Embedding generation
+- `GET /` - Built-in web UI
 
-const server = new LMStudioServer();
-await server.loadModel({ name: "llama-3.2-1b-instruct" });
-const result = await server.infer("What is the meaning of life?");
-console.log(result);
-```
+See [X-DEV-LM-Studio/README.md](./X-DEV-LM-Studio/README.md) for full API documentation.
 
-### X-DEV-Obsidian
-Obsidian plugin enabling local LLM integration within your Obsidian vault.
+### X-DEV-Obsidian Plugin
+
+**Production-ready Obsidian plugin** for local LLM integration.
 
 **Features:**
-- Connect to LM Studio from within Obsidian
-- Configurable connection settings
+- Connect to LM Studio from Obsidian
+- Ask prompts with modal input
+- Summarize active notes
+- Configurable models and parameters
+- Settings tab for endpoint, temperature, max tokens
 - Auto-connect on startup option
-- Plugin settings panel
 
-**Commands:**
-```bash
-npm run dev        # Watch mode for development
-npm run build      # Build for production
-npm run lint       # Lint code
-```
+**Build Status:** ✅ Compiles cleanly (1009 KB bundle)
 
 **Installation:**
-1. Build the plugin: `npm run build`
-2. Copy `main.js` and `manifest.json` to `~/.obsidian/plugins/x-dev-obsidian-llm/`
-3. Enable the plugin in Obsidian settings
+1. Build: `npm run build -w X-DEV-Obsidian`
+2. Copy `X-DEV-Obsidian/main.js` and `manifest.json` to:
+   - `~/.obsidian/plugins/x-dev-obsidian/`
+3. Enable in Obsidian: Settings → Community Plugins → X-DEV Obsidian
 
-## 🛠️ Development Workflow
+**Commands:**
+- Ribbon icon: "Ask LM Studio"
+- Command: "Connect to LM Studio"
+- Command: "Ask LM Studio"
+- Command: "Summarize active note"
 
-### Both Projects Use:
-- **TypeScript** for type safety
-- **npm** for package management
-- **esbuild** (Obsidian) / **tsc** (LM Studio) for building
+See [X-DEV-Obsidian/README.md](./X-DEV-Obsidian/README.md) for plugin details.
 
-### Development Mode
+### React Settings UI (Prototype)
+
+**NOT included in production builds.** Located in `X-DEV-LM-Studio/examples/settings-ui-react/`.
+
+Demonstrates settings configuration but requires:
+- React dependencies (not installed by default)
+- Separate frontend build configuration
+- Integration with a bundler (Vite, webpack, etc.)
+
+**Status:** Example/prototype code. See [examples README](./X-DEV-LM-Studio/examples/settings-ui-react/README.md) for details.
+
+## 🛠️ Development
+
+### Build System
+
+- **Root workspace:** `npm` with two workspaces
+- **LM Studio:** TypeScript + Node.js (backend only)
+- **Obsidian:** TypeScript + esbuild (with plugin build)
+- **Separate configs:** `tsconfig.backend.json` excludes React/tests
+
+### Scripts
+
 ```bash
-# LM Studio - watch TypeScript changes
-cd X-DEV-LM-Studio && npm run dev
+# Root level
+npm install              # Install all dependencies
+npm run build:all        # Build both projects (parallel)
+npm run build:lm         # Build LM Studio only
+npm run build:obsidian   # Build Obsidian only
+npm run dev:all          # Dev watch mode (parallel)
 
-# Obsidian - watch and hot-reload
-cd X-DEV-Obsidian && npm run dev
+# LM Studio
+npm run build -w X-DEV-LM-Studio      # Build backend
+npm run dev -w X-DEV-LM-Studio        # Watch mode
+npm start -w X-DEV-LM-Studio          # Run server
+
+# Obsidian
+npm run build -w X-DEV-Obsidian       # Build plugin
+npm run dev -w X-DEV-Obsidian         # Watch mode
 ```
 
-### Production Build
-```bash
-# Build both projects
-cd X-DEV-LM-Studio && npm run build
-cd X-DEV-Obsidian && npm run build
-```
+### Testing
 
-## 🔗 Integration
+See [X-DEV-LM-Studio/TESTING.md](./X-DEV-LM-Studio/TESTING.md) for testing guide.
 
-The Obsidian plugin connects to the LM Studio server:
+**Current test coverage:**
+- Backend request validators (24 tests)
+- Settings validation (hand-written runner)
 
-1. **Configuration**: Set LM Studio URL in Obsidian plugin settings
-2. **Connection**: Plugin communicates with LM Studio API
-3. **Inference**: Send prompts from Obsidian to local models
+## 📖 Documentation
+
+### Architecture Documentation (DOC/ folder)
+
+- **[README.md](./DOC/README.md)** - Overview of all docs
+- **[ARCHITECTURE.md](./DOC/ARCHITECTURE.md)** - System design, runtime flow, integration
+- **[LOGIC_AND_FUNCTIONS.md](./DOC/LOGIC_AND_FUNCTIONS.md)** - Function-by-function analysis
+- **[FINDINGS.md](./DOC/FINDINGS.md)** - Issues, risks, recommendations
+- **[BUILD_AND_TEST_REPORT.md](./DOC/BUILD_AND_TEST_REPORT.md)** - Verification results
+
+### Project-Specific Docs
+
+- [X-DEV-LM-Studio/README.md](./X-DEV-LM-Studio/README.md) - Backend API & usage
+- [X-DEV-LM-Studio/TESTING.md](./X-DEV-LM-Studio/TESTING.md) - Test setup & strategy
+- [X-DEV-Obsidian/README.md](./X-DEV-Obsidian/README.md) - Plugin docs
+- [X-DEV-LM-Studio/examples/settings-ui-react/README.md](./X-DEV-LM-Studio/examples/settings-ui-react/README.md) - React UI info
+
+## ✅ Verification Status
+
+### Build Results
+
+| Project | Status | Output |
+|---------|--------|--------|
+| X-DEV-LM-Studio | ✅ PASS | `index.js` + `settingsIntegration.js` |
+| X-DEV-Obsidian | ✅ PASS | `main.js` (1009 KB) |
+
+### Dependencies
+
+- Root: `npm install` ✅
+- Obsidian: `npm run build` ✅
+- LM Studio: `npm run build` ✅
+
+### Known Issues Fixed
+
+✅ **Phase 1 Stabilization Complete:**
+- Fixed build by separating backend-only TypeScript config
+- Updated SDK usage in `settingsIntegration.ts`
+- Fixed React UI route mismatch (`/models` → `/v1/models`)
+
+## 🎯 Roadmap
+
+### Phase 2: UX Improvements (Pending)
+
+- Improve Obsidian answer output (insert/replace/modal)
+- Add URL validation to Obsidian settings
+- Clarify autoConnect behavior
+- Fix current model tracking drift
+
+### Phase 3: Testing & Docs (In Progress)
+
+- ✅ Move React UI to examples
+- ✅ Add backend test suite
+- ✅ Update root documentation
+
+### Phase 4: Future
+
+- Extract backend helpers to separate module
+- Add Jest/Vitest test runner
+- Add end-to-end API tests
+- Consider CORS support for remote clients
+- Optional: Build proper frontend for settings UI
 
 ## 📝 Configuration
 
-### LM Studio Server
-- API URL: `http://localhost:1234` (default)
-- Configure in Obsidian plugin settings
+### LM Studio Backend
+
+Default binding: `127.0.0.1:3000`
+
+Environment variables (future):
+- `LM_STUDIO_URL` - LM Studio API URL (default: `http://localhost:1234`)
+- `BACKEND_PORT` - Backend listen port (default: `3000`)
 
 ### Obsidian Plugin
-- **lmStudioUrl**: URL of LM Studio API (default: `http://localhost:1234`)
-- **autoConnect**: Auto-connect on Obsidian startup (default: `true`)
 
-## 📚 Documentation
-
-- [X-DEV-LM-Studio README](./X-DEV-LM-Studio/README.md)
-- [X-DEV-Obsidian README](./X-DEV-Obsidian/README.md)
-
-## 🧪 Testing & Verification
-
-Both projects build without errors:
-```bash
-✓ X-DEV-LM-Studio built successfully
-✓ X-DEV-Obsidian built successfully
-```
-
-## 🎯 Next Steps
-
-1. **Expand LM Studio Server**:
-   - Add real API calls to LM Studio
-   - Implement agent framework
-   - Add model listing and management
-
-2. **Enhance Obsidian Plugin**:
-   - Add UI for model selection
-   - Implement prompt templates
-   - Add conversation history management
-
-3. **Integration**:
-   - Connect plugin to server APIs
-   - Add streaming responses
-   - Implement error handling
+Settings available in Obsidian:
+- **LM Studio URL** - WebSocket/HTTP endpoint
+- **Model Name** - Model identifier to use
+- **System Prompt** - Custom system prompt
+- **Temperature** - Sampling temperature (0-2)
+- **Max Tokens** - Max generation length
+- **Auto Connect** - Connect on startup
 
 ## 📄 License
 
@@ -174,3 +283,8 @@ MIT
 ## 👤 Author
 
 X-DEV
+
+---
+
+**Last Updated:** 2026-06-20  
+**Documentation Status:** Current with Phase 1 & 3 completions

@@ -8,6 +8,7 @@ interface XDevLlmSettings {
 	temperature: number;
 	maxTokens: number;
 	autoConnect: boolean;
+	outputMode: "notice" | "insert" | "replace" | "modal";
 }
 
 const DEFAULT_SETTINGS: XDevLlmSettings = {
@@ -17,6 +18,7 @@ const DEFAULT_SETTINGS: XDevLlmSettings = {
 	temperature: 0.4,
 	maxTokens: 512,
 	autoConnect: true,
+	outputMode: "notice",
 };
 
 class LmStudioService {
@@ -66,6 +68,28 @@ function normalizeBaseUrl(raw: string): string {
 	return trimmed;
 }
 
+function validateBaseUrl(raw: string): { valid: boolean; error?: string } {
+	const trimmed = raw.trim();
+
+	// Check if empty
+	if (trimmed.length === 0) {
+		return { valid: false, error: "LM Studio URL cannot be empty" };
+	}
+
+	// Check for supported schemes
+	if (
+		!trimmed.startsWith("http://") &&
+		!trimmed.startsWith("https://") &&
+		!trimmed.startsWith("ws://") &&
+		!trimmed.startsWith("wss://") &&
+		!trimmed.match(/^[a-zA-Z0-9.-]+:\d+/)
+	) {
+		return { valid: false, error: "Use http://, https://, ws://, wss://, or host:port format" };
+	}
+
+	return { valid: true };
+}
+
 function getMarkdownText(view: MarkdownView): string {
 	const editor = view.editor;
 	const selection = editor.getSelection().trim();
@@ -75,6 +99,39 @@ function getMarkdownText(view: MarkdownView): string {
 	}
 
 	return editor.getValue().trim();
+}
+
+class ResponseModal extends Modal {
+	private readonly typeText: string;
+	private readonly content: string;
+
+	constructor(app: App, typeText: string, content: string) {
+		super(app);
+		this.typeText = typeText;
+		this.content = content;
+	}
+
+	onOpen(): void {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.createEl("h2", { text: `LM Studio ${this.typeText}` });
+
+		const scrollContainer = contentEl.createEl("div", {
+			attr: { style: "max-height: 60vh; overflow-y: auto; white-space: pre-wrap; word-break: break-word; font-family: monospace; font-size: 0.9em;" },
+		});
+		scrollContainer.createEl("p", { text: this.content });
+
+		new Setting(contentEl)
+			.addButton((button) =>
+				button.setCta().setButtonText("Close").onClick(() => this.close())
+			)
+			.addButton((button) =>
+				button.setButtonText("Copy").onClick(() => {
+					navigator.clipboard.writeText(this.content);
+					new Notice("Response copied to clipboard!");
+				})
+			);
+	}
 }
 
 class PromptModal extends Modal {
@@ -142,7 +199,7 @@ export default class XDevLlmPlugin extends Plugin {
 			name: "Connect to LM Studio",
 			callback: () => {
 				this.service = new LmStudioService(this.settings.lmStudioBaseUrl);
-				new Notice("LM Studio client ready.");
+				new Notice("LM Studio client initialized.");
 			},
 		});
 
@@ -165,7 +222,7 @@ export default class XDevLlmPlugin extends Plugin {
 		this.addSettingTab(new XDevLlmSettingTab(this.app, this));
 
 		if (this.settings.autoConnect) {
-			new Notice("LM Studio client ready.");
+			new Notice("LM Studio plugin loaded. Client will connect on first use.");
 		}
 	}
 
@@ -186,7 +243,7 @@ export default class XDevLlmPlugin extends Plugin {
 		new PromptModal(this.app, "Ask LM Studio", "Write your prompt...", async (prompt) => {
 			try {
 				const answer = await this.getService().respond(prompt, this.settings);
-				new Notice(answer.slice(0, 250));
+				await this.handleOutput(answer, "answer");
 			} catch (error) {
 				new Notice(error instanceof Error ? error.message : "LM Studio request failed.");
 			}
@@ -211,9 +268,56 @@ export default class XDevLlmPlugin extends Plugin {
 				`Summarize the following Obsidian note in 5 bullet points and keep it concise:\n\n${noteText}`,
 				this.settings
 			);
-			new Notice(answer.slice(0, 250));
+			await this.handleOutput(answer, "summary");
 		} catch (error) {
 			new Notice(error instanceof Error ? error.message : "LM Studio request failed.");
+		}
+	}
+
+	private async handleOutput(answer: string, type: "answer" | "summary"): Promise<void> {
+		const mode = this.settings.outputMode;
+
+		switch (mode) {
+			case "notice":
+				// Show preview in notice (original behavior)
+				new Notice(answer.slice(0, 250) + (answer.length > 250 ? "..." : ""));
+				break;
+
+			case "insert":
+				// Insert at cursor
+				{
+					const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+					if (view) {
+						view.editor.replaceSelection(`\n${answer}\n`);
+						new Notice(`${type} inserted at cursor`);
+					} else {
+						new Notice("Open a markdown note to insert text.");
+					}
+				}
+				break;
+
+			case "replace":
+				// Replace selection
+				{
+					const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+					if (view) {
+						const selection = view.editor.getSelection();
+						if (selection.length > 0) {
+							view.editor.replaceSelection(answer);
+							new Notice(`Selection replaced with ${type}`);
+						} else {
+							new Notice("Select text first to replace.");
+						}
+					} else {
+						new Notice("Open a markdown note to replace text.");
+					}
+				}
+				break;
+
+			case "modal":
+				// Show in full modal
+				new ResponseModal(this.app, type, answer).open();
+				break;
 		}
 	}
 
@@ -242,12 +346,44 @@ class XDevLlmSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("LM Studio base URL")
 			.setDesc("Use the WebSocket endpoint, for example ws://127.0.0.1:1234. http:// values are converted automatically.")
-			.addText((text) =>
+			.addText((text) => {
 				text
 					.setPlaceholder("ws://127.0.0.1:1234")
-					.setValue(this.plugin.settings.lmStudioBaseUrl)
+					.setValue(this.plugin.settings.lmStudioBaseUrl);
+
+				text.onChange(async (value) => {
+					const validation = validateBaseUrl(value);
+					if (!validation.valid) {
+						text.inputEl.style.borderColor = "var(--color-red)";
+						new Notice(`Invalid URL: ${validation.error}`);
+						return;
+					}
+					text.inputEl.style.borderColor = "";
+					this.plugin.settings.lmStudioBaseUrl = value;
+					await this.plugin.saveSettings();
+				});
+
+				// Validate on load
+				const validation = validateBaseUrl(this.plugin.settings.lmStudioBaseUrl);
+				if (!validation.valid) {
+					text.inputEl.style.borderColor = "var(--color-red)";
+				}
+
+				return text;
+			});
+
+		new Setting(containerEl)
+			.setName("Output mode")
+			.setDesc("How to display LM Studio responses.")
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption("notice", "Show in notice (preview)")
+					.addOption("insert", "Insert at cursor")
+					.addOption("replace", "Replace selection")
+					.addOption("modal", "Full screen modal")
+					.setValue(this.plugin.settings.outputMode)
 					.onChange(async (value) => {
-						this.plugin.settings.lmStudioBaseUrl = value;
+						this.plugin.settings.outputMode = value as "notice" | "insert" | "replace" | "modal";
 						await this.plugin.saveSettings();
 					})
 			);
@@ -308,8 +444,8 @@ class XDevLlmSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Auto connect")
-			.setDesc("Prepare the LM Studio client on startup.")
+			.setName("Prepare on startup")
+			.setDesc("Initialize the LM Studio client when Obsidian loads (connection happens on first use).")
 			.addToggle((toggle) =>
 				toggle.setValue(this.plugin.settings.autoConnect).onChange(async (value) => {
 					this.plugin.settings.autoConnect = value;
