@@ -1,0 +1,133 @@
+.playground {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  height: 100%;
+}
+
+.playground-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.playground-section h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--accent);
+}
+
+.playground-textarea {
+  min-height: 140px;
+  max-height: 200px;
+  resize: vertical;
+}
+
+.playground-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 16px;
+  align-items: flex-end;
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.control-group label {
+  font-size: 0.85rem;
+  color: var(--muted);
+  display: flex;
+  justify-content: space-between;
+}
+
+.control-group label .value {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.control-group input[type="range"] {
+  width: 100%;
+  cursor: pointer;
+}
+
+.control-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.control-buttons button {
+  flex: 1;
+}
+
+.playground-output {
+  min-height: 120px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  font-family: monospace;
+  font-size: 0.9rem;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.playground-output .placeholder {
+  color: var(--muted);
+  font-style: italic;
+  font-family: inherit;
+}
+
+.output-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.output-header h3 {
+  margin: 0;
+}
+
+.token-count {
+  background: var(--accent);
+  color: var(--bg);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.output-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.btn-small {
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-small:hover {
+  background: var(--surface);
+}
+
+.btn-small.btn-secondary:hover {
+  background: #2a3a66;
+}

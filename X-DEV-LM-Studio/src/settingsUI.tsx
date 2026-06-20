@@ -1,5 +1,10 @@
 import React, { useState, useEffect } from "react";
 import "./settingsUI.css";
+import { LoadingSpinner } from "./components/LoadingSpinner";
+import { ToastContainer, type ToastType } from "./components/Toast";
+import { ModelStatus } from "./components/ModelStatus";
+import { Playground } from "./components/Playground";
+import { useModelStatus } from "./hooks/useModelStatus";
 
 interface ModelConfig {
   name: string;
@@ -57,12 +62,18 @@ const SettingsUI: React.FC = () => {
   const [apiUrl, setApiUrl] = useState("http://localhost:1234");
   const [clientIdentifier, setClientIdentifier] = useState("");
   const [clientPasskey, setClientPasskey] = useState("");
+  const [apiToken, setApiToken] = useState("");
   const [verboseErrors, setVerboseErrors] = useState(false);
 
   // UI State
-  const [activeTab, setActiveTab] = useState<"model" | "inference" | "backend">("model");
+  const [activeTab, setActiveTab] = useState<"model" | "inference" | "backend" | "playground">("model");
   const [testResults, setTestResults] = useState<TestResult[]>([]);
   const [expandedResult, setExpandedResult] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<Array<{ id: string; message: string; type: ToastType }>>([]);
+  const [testLoading, setTestLoading] = useState(false);
+
+  // Model Status Hook
+  const { status: modelStatus, loading: statusLoading } = useModelStatus(apiUrl);
 
   // Auto-calculate API URL
   useEffect(() => {
@@ -78,6 +89,15 @@ const SettingsUI: React.FC = () => {
       timestamp: Date.now(),
     };
     setTestResults((prev) => [result, ...prev.slice(0, 9)]);
+  };
+
+  const showToast = (message: string, type: ToastType = "info") => {
+    const id = `${Date.now()}-${Math.random()}`;
+    setToasts((prev) => [...prev, { id, message, type }]);
+  };
+
+  const removeToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
   const testModelConfig = async () => {
@@ -120,17 +140,28 @@ const SettingsUI: React.FC = () => {
   };
 
   const testBackendConnection = async () => {
+    setTestLoading(true);
     try {
+      const headers: Record<string, string> = {};
+      if (clientIdentifier) headers["X-Client-ID"] = clientIdentifier;
+      if (apiToken) headers["Authorization"] = `Bearer ${apiToken}`;
+      
       const response = await fetch(`${apiUrl}/v1/models`, {
-        headers: clientIdentifier ? { "X-Client-ID": clientIdentifier } : {},
+        headers,
       });
       if (response.ok) {
         addTestResult("Backend Connection", "success", "Connected successfully");
+        showToast("✅ Connected to backend successfully!", "success");
       } else {
         addTestResult("Backend Connection", "error", `HTTP ${response.status}`);
+        showToast(`❌ Connection failed: HTTP ${response.status}`, "error");
       }
     } catch (error) {
-      addTestResult("Backend Connection", "error", `Connection failed: ${error}`);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      addTestResult("Backend Connection", "error", `Connection failed: ${errorMsg}`);
+      showToast(`❌ Connection failed: ${errorMsg}`, "error");
+    } finally {
+      setTestLoading(false);
     }
   };
 
@@ -162,6 +193,8 @@ const SettingsUI: React.FC = () => {
         port,
         apiUrl,
         clientIdentifier,
+        clientPasskey,
+        apiToken,
         verboseErrors,
       },
       exportedAt: new Date().toISOString(),
@@ -202,6 +235,8 @@ const SettingsUI: React.FC = () => {
           setHost(settings.backend.host || "localhost");
           setPort(settings.backend.port || 1234);
           setClientIdentifier(settings.backend.clientIdentifier || "");
+          setClientPasskey(settings.backend.clientPasskey || "");
+          setApiToken(settings.backend.apiToken || "");
           setVerboseErrors(settings.backend.verboseErrors ?? false);
         }
         addTestResult("Settings Import", "success", "Settings imported successfully");
@@ -236,6 +271,7 @@ const SettingsUI: React.FC = () => {
 
   return (
     <div className="settings-ui">
+      <ToastContainer toasts={toasts} onClose={removeToast} />
       <header className="settings-header">
         <h1>🎛️ LM Studio Settings Tester</h1>
         <p>Configure and test all LM Studio settings in one place</p>
@@ -262,6 +298,12 @@ const SettingsUI: React.FC = () => {
               onClick={() => setActiveTab("backend")}
             >
               Backend Settings
+            </button>
+            <button
+              className={`tab-btn ${activeTab === "playground" ? "active" : ""}`}
+              onClick={() => setActiveTab("playground")}
+            >
+              🚀 Playground
             </button>
           </div>
 
@@ -531,6 +573,17 @@ const SettingsUI: React.FC = () => {
                 />
               </div>
 
+              <div className="form-group">
+                <label>LM Studio API Token</label>
+                <input
+                  type="password"
+                  placeholder="Optional LM Studio API token"
+                  value={apiToken}
+                  onChange={(e) => setApiToken(e.target.value)}
+                />
+                <p className="help-text">Get your token from LM Studio settings. Required for authenticated LM Studio instances.</p>
+              </div>
+
               <div className="form-group checkbox-group">
                 <label>
                   <input
@@ -543,10 +596,32 @@ const SettingsUI: React.FC = () => {
                 <p className="help-text">Show detailed error information in logs</p>
               </div>
 
-              <button className="btn btn-primary" onClick={testBackendConnection}>
-                🔗 Test Backend Connection
+              <button 
+               className="btn btn-primary" 
+               onClick={testBackendConnection}
+               disabled={testLoading}
+              >
+               {testLoading ? "Testing..." : "🔗 Test Backend Connection"}
               </button>
+              {testLoading && <LoadingSpinner message="Connecting..." size="small" />}
             </div>
+          )}
+
+          {/* Playground Tab */}
+          {activeTab === "playground" && (
+           <div className="tab-content">
+             <h2>💬 Model Playground</h2>
+             <ModelStatus 
+               llm={modelStatus.llm} 
+               embedding={modelStatus.embedding} 
+               loading={statusLoading}
+             />
+             <Playground 
+               apiUrl={apiUrl} 
+               modelName={modelStatus.llm || undefined}
+               onShowToast={showToast}
+             />
+           </div>
           )}
 
           {/* Action Buttons */}

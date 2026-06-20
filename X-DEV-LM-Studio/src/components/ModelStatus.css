@@ -1,0 +1,36 @@
+.model-status {
+  background: color-mix(in srgb, var(--surface-2), transparent 5%);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.model-status h3 {
+  margin: 0 0 12px 0;
+  font-size: 1rem;
+  color: var(--accent);
+}
+
+.model-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.model-item:last-child {
+  border-bottom: none;
+}
+
+.model-label {
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.model-value {
+  color: var(--ok);
+  font-family: monospace;
+  font-size: 0.9rem;
+}
